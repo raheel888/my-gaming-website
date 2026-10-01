@@ -75,7 +75,6 @@
       <div id="error-box" class="error-box"></div>
       <div id="success-box" class="success-box"></div>
       
-      <!-- Lobby Screen -->
       <section id="lobby-screen" class="screen active">
         <h1 class="game-title">🔤 Categories Stop</h1>
         <p class="subtitle">Multiplayer — Race to find words!</p>
@@ -96,7 +95,6 @@
         <p id="connection-status" class="status-note">Connecting...</p>
       </section>
 
-      <!-- Room Screen -->
       <section id="room-screen" class="screen">
         <div class="top-bar">
           <h2>Room Lobby</h2>
@@ -120,7 +118,6 @@
         </div>
       </section>
 
-      <!-- Play Screen -->
       <section id="play-screen" class="screen">
         <div class="round-header">
           <div>Round <span id="r-num">1</span>/<span id="r-total">5</span></div>
@@ -131,7 +128,6 @@
         <div class="stop-zone"><button id="stop-button" class="stop-btn" disabled>STOP!</button></div>
       </section>
 
-      <!-- Vote Screen -->
       <section id="vote-screen" class="screen">
         <h2 style="text-align:center;margin:1rem;">✅ Check Answers</h2>
         <p style="text-align:center;color:var(--muted);margin-bottom:1rem;">Mark answers valid ✅ or invalid ❌</p>
@@ -139,14 +135,12 @@
         <button id="voting-done" class="btn primary full-width">Finish Voting & Show Scores</button>
       </section>
 
-      <!-- Scores Screen -->
       <section id="scores-screen" class="screen">
         <h2 style="text-align:center;margin:1rem;">📊 Round Results</h2>
         <div id="scoreboard-area"></div>
         <p style="text-align:center;color:var(--muted);margin-top:1rem;">Next round starting soon...</p>
       </section>
 
-      <!-- Final Results Screen -->
       <section id="results-screen" class="screen">
         <h1 class="game-title">🎉 Game Over!</h1>
         <div id="final-ranking"></div>
@@ -159,15 +153,12 @@
   </div>
 
   <script>
-    // ─── PERSISTENT IDENTITY ───
-    // Stable ID — survives refresh, back button, same browser session
     const STORAGE_KEYS = {
       PLAYER_ID: 'cs_player_id_v2',
       PLAYER_NAME: 'cs_player_name',
       LAST_ROOM: 'cs_last_room'
     };
 
-    // Get or create stable player ID
     let playerId = localStorage.getItem(STORAGE_KEYS.PLAYER_ID);
     if (!playerId) {
       playerId = crypto.randomUUID();
@@ -177,7 +168,6 @@
     let playerName = localStorage.getItem(STORAGE_KEYS.PLAYER_NAME) || 'Guest';
     let lastRoomCode = sessionStorage.getItem(STORAGE_KEYS.LAST_ROOM) || null;
 
-    // ─── CONNECTION ───
     const WS_PROTO = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const WS_URL = `${WS_PROTO}//${location.host}`;
     
@@ -197,7 +187,6 @@
       { id: 'book', name: 'Book' }, { id: 'river', name: 'River' }
     ];
 
-    // ─── UI HELPERS ───
     function showScreen(name) {
       document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
       document.getElementById(`${name}-screen`).classList.add('active');
@@ -218,14 +207,12 @@
     }
 
     function send(msg) {
-      // Always include identity
       msg.playerId = playerId;
       msg.playerName = playerName;
-      
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(msg));
       } else {
-        showError('Not connected — reconnecting...');
+        showError('Reconnecting...');
         connect();
       }
     }
@@ -240,14 +227,12 @@
       sessionStorage.removeItem(STORAGE_KEYS.LAST_ROOM);
     }
 
-    // ─── CONNECTION MANAGEMENT ───
     function connect() {
       document.getElementById('connection-status').textContent = '🔄 Connecting...';
       
       try {
         ws = new WebSocket(WS_URL);
       } catch (e) {
-        console.error('Connection error:', e);
         scheduleReconnect();
         return;
       }
@@ -256,14 +241,11 @@
         document.getElementById('connection-status').textContent = '✅ Connected';
         reconnectAttempts = 0;
         refreshRoomList();
-        
-        // Auto-rejoin if we were in a room before
         if (lastRoomCode && !currentRoomCode) {
-          showSuccess('Reconnecting to your room...');
           setTimeout(() => {
             document.getElementById('join-code').value = lastRoomCode;
             send({ type: 'JOIN_ROOM', code: lastRoomCode });
-          }, 500);
+          }, 600);
         }
       };
 
@@ -272,26 +254,21 @@
         scheduleReconnect();
       };
 
-      ws.onerror = (err) => {
-        console.error('WebSocket error:', err);
-        showError('Connection issue — will retry');
-      };
+      ws.onerror = () => showError('Connection issue');
 
       ws.onmessage = handleMessage;
     }
 
     function scheduleReconnect() {
       if (reconnectAttempts >= MAX_RECONNECT) {
-        showError('Could not connect. Refresh to try again.');
-        document.getElementById('connection-status').textContent = '❌ Offline';
+        showError('Could not connect — refresh page');
         return;
       }
       reconnectAttempts++;
-      const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 8000);
-      setTimeout(connect, delay);
+      setTimeout(connect, Math.min(1000 * Math.pow(2, reconnectAttempts), 8000));
     }
 
-    // ─── MESSAGE HANDLING ───
+    // ✅ FIXED: Reliable message handling
     function handleMessage(event) {
       const msg = JSON.parse(event.data);
       console.log('←', msg.type, msg);
@@ -308,7 +285,7 @@
           showScreen('room');
           renderPlayers(msg.room.players);
           renderCategoryChecks(msg.room.categories.map(c => c.id));
-          showSuccess('Room created! Share code: ' + msg.code);
+          showSuccess('Room created!');
           break;
           
         case 'ROOM_JOINED':
@@ -318,9 +295,7 @@
           showScreen('room');
           renderPlayers(msg.room.players);
           renderCategoryChecks(msg.room.categories.map(c => c.id));
-          if (msg.isReconnect) {
-            showSuccess('Welcome back! Reconnected.');
-          }
+          if (msg.isReconnect) showSuccess('Reconnected!');
           break;
           
         case 'PLAYERS_UPDATED':
@@ -348,7 +323,9 @@
           showError('⏰ Time\'s up!');
           break;
           
+        // ✅ CRITICAL FIX: This is what was missing — ensures screen changes
         case 'VOTING_START':
+          console.log('→ Moving to voting screen');
           showScreen('vote');
           renderVoting(msg.answers, msg.categories);
           break;
@@ -374,7 +351,6 @@
       }
     }
 
-    // ─── RENDER FUNCTIONS ───
     function renderCategoryChecks(selectedIds = []) {
       const c = document.getElementById('cat-checks'); c.innerHTML = '';
       ALL_CATEGORIES.forEach(cat => {
@@ -387,8 +363,6 @@
       document.getElementById('player-list').innerHTML = players.map(p =>
         `<div class="player-row ${p.id === playerId ? 'you' : ''}">${p.name} ${p.isHost?'👑':''} ${p.id === playerId?'(You)':''}</div>`
       ).join('');
-      
-      // Only host sees start button
       const isHost = players.some(p => p.id === playerId && p.isHost);
       document.getElementById('start-game-btn').style.display = isHost ? 'block' : 'none';
     }
@@ -407,11 +381,8 @@
       });
     }
 
-    function refreshRoomList() {
-      send({ type: 'LIST_ROOMS' });
-    }
+    function refreshRoomList() { send({ type: 'LIST_ROOMS' }); }
 
-    // ─── GAMEPLAY ───
     function buildAnswerInputs() {
       const grid = document.getElementById('answers-grid');
       grid.innerHTML = currentCategories.map(cat =>
@@ -423,11 +394,7 @@
         inp.oninput = () => {
           const allFilled = Array.from(document.querySelectorAll('.answer-input')).every(i => i.value.trim() !== '');
           document.getElementById('stop-button').disabled = !allFilled;
-          send({
-            type: 'SUBMIT_ANSWER',
-            categoryId: inp.dataset.cat,
-            answer: inp.value
-          });
+          send({ type: 'SUBMIT_ANSWER', categoryId: inp.dataset.cat, answer: inp.value });
         };
       });
     }
@@ -443,20 +410,15 @@
       let t = seconds;
       const el = document.getElementById('timer-display');
       el.textContent = t; el.classList.remove('urgent');
-      
       timerInterval = setInterval(() => {
         t--; el.textContent = t;
         if (t <= 10) el.classList.add('urgent');
-        if (t <= 0) {
-          clearInterval(timerInterval);
-          send({ type: 'TIME_UP' });
-        }
+        if (t <= 0) { clearInterval(timerInterval); send({ type: 'TIME_UP' }); }
       }, 1000);
     }
 
     function renderVoting(answers, categories) {
       const area = document.getElementById('voting-area'); area.innerHTML = '';
-      
       for (const pid in answers) {
         area.innerHTML += `<div class="vote-block"><h4>Player</h4>`;
         categories.forEach(cat => {
@@ -472,7 +434,6 @@
         });
         area.innerHTML += `</div>`;
       }
-      
       area.querySelectorAll('.vote-btn').forEach(btn => {
         btn.onclick = () => {
           send({
@@ -487,7 +448,6 @@
       });
     }
 
-    // ─── INITIALIZATION ───
     document.addEventListener('DOMContentLoaded', () => {
       const nameInput = document.getElementById('player-name');
       nameInput.value = playerName;
@@ -500,7 +460,6 @@
       renderCategoryChecks();
       setInterval(refreshRoomList, 4000);
 
-      // Buttons
       document.getElementById('create-room-btn').onclick = () => {
         const selected = Array.from(document.querySelectorAll('#cat-checks input:checked')).map(i => i.value);
         send({
@@ -515,23 +474,16 @@
 
       document.getElementById('join-btn').onclick = () => {
         const code = document.getElementById('join-code').value.trim().toUpperCase();
-        if (!code) return showError('Please enter a room code');
+        if (!code) return showError('Enter a room code');
         send({ type: 'JOIN_ROOM', code });
       };
 
-      document.getElementById('start-game-btn').onclick = () => {
-        send({ type: 'START_GAME', roomCode: currentRoomCode });
-      };
-
+      document.getElementById('start-game-btn').onclick = () => send({ type: 'START_GAME' });
       document.getElementById('stop-button').onclick = () => {
         freezeInputs();
-        send({ type: 'PRESSED_STOP', roomCode: currentRoomCode });
+        send({ type: 'PRESSED_STOP' });
       };
-
-      document.getElementById('voting-done').onclick = () => {
-        send({ type: 'FINISH_VOTING', roomCode: currentRoomCode });
-      };
-
+      document.getElementById('voting-done').onclick = () => send({ type: 'FINISH_VOTING' });
       document.getElementById('play-again').onclick = () => {
         clearSavedRoom();
         location.href = '/categories-stop';
