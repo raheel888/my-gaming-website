@@ -5,40 +5,11 @@ const path = require('path');
 
 const PORT = process.env.PORT || 8080;
 
-// Serve pages
-const server = http.createServer((req, res) => {
-  console.log(`➡️ ${req.method} ${req.url}`);
+// === PERSISTENT STORE — in-memory now, database later ===
+const sessions = new Map();       // playerId → { name, lastSeen }
+const rooms = new Map();          // roomCode → room object
+const playerToRoom = new Map();   // playerId → roomCode (track who is where)
 
-  let filePath = 'public/index.html'; // default = homepage
-  if (req.url === '/' || req.url === '/home' || req.url === '/index.html') {
-    filePath = 'public/index.html';
-  } else if (req.url === '/categories-stop' || req.url === '/categories-stop.html') {
-    filePath = 'public/categories-stop.html';
-  } else {
-    filePath = `public${req.url}`;
-  }
-
-  const ext = path.extname(filePath);
-  const types = {
-    '.html': 'text/html; charset=utf-8',
-    '.css': 'text/css; charset=utf-8',
-    '.js': 'text/javascript; charset=utf-8',
-    '.json': 'application/json'
-  };
-
-  fs.readFile(path.join(__dirname, filePath), (err, data) => {
-    if (err) {
-      res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
-      return res.end('<h1>404 — Page not found</h1><a href="/">← Go Home</a>');
-    }
-    res.writeHead(200, { 'Content-Type': types[ext] || 'text/plain' });
-    res.end(data);
-  });
-});
-
-// === MULTIPLAYER GAME LOGIC ===
-const wss = new WebSocket.Server({ server });
-const rooms = new Map();
 const ALL_CATEGORIES = [
   { id: 'country', name: 'Country' }, { id: 'city', name: 'City' },
   { id: 'animal', name: 'Animal' }, { id: 'food', name: 'Food' },
@@ -48,6 +19,7 @@ const ALL_CATEGORIES = [
   { id: 'book', name: 'Book' }, { id: 'river', name: 'River' }
 ];
 
+// === HELPERS ===
 function makeRoomCode() {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
 }
@@ -61,16 +33,65 @@ function generateLetter() {
   return l;
 }
 
-function broadcast(room, excludeId = null) {
+function broadcast(room, excludePlayerId = null) {
   return (msg) => {
     const data = JSON.stringify(msg);
     room.players.forEach(p => {
-      if (p.id !== excludeId && p.ws.readyState === WebSocket.OPEN) {
+      if (p.id !== excludePlayerId && p.ws?.readyState === WebSocket.OPEN) {
         p.ws.send(data);
       }
     });
   };
 }
+
+function cleanupPlayerFromRoom(playerId, room) {
+  if (!room) return;
+  const idx = room.players.findIndex(p => p.id === playerId);
+  if (idx !== -1) room.players.splice(idx, 1);
+  playerToRoom.delete(playerId);
+  if (room.players.length === 0) {
+    rooms.delete(room.id);
+  } else {
+    // Transfer host if needed
+    if (room.players.every(p => !p.isHost)) {
+      room.players[0].isHost = true;
+    }
+    broadcast(room)({ type: 'PLAYERS_UPDATED', players: room.players.map(p => ({id:p.id,name:p.name,isHost:p.isHost})) });
+  }
+}
+
+// === HTTP SERVER — Serve Pages ===
+const server = http.createServer((req, res) => {
+  console.log(`➡️ ${req.method} ${req.url}`);
+
+  let filePath = 'public/index.html';
+  if (req.url === '/' || req.url === '/index.html') {
+    filePath = 'public/index.html';
+  } else if (req.url.startsWith('/categories-stop')) {
+    filePath = 'public/categories-stop.html';
+  } else {
+    filePath = `public${req.url}`;
+  }
+
+  const ext = path.extname(filePath);
+  const types = {
+    '.html': 'text/html; charset=utf-8',
+    '.css': 'text/css; charset=utf-8',
+    '.js': 'text/javascript; charset=utf-8'
+  };
+
+  fs.readFile(path.join(__dirname, filePath), (err, data) => {
+    if (err) {
+      res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+      return res.end('<h1>404 — Not Found</h1><a href="/">← Go Home</a>');
+    }
+    res.writeHead(200, { 'Content-Type': types[ext] || 'application/octet-stream' });
+    res.end(data);
+  });
+});
+
+// === WEBSOCKET — GAME LOGIC ===
+const wss = new WebSocket.Server({ server });
 
 wss.on('connection', (ws) => {
   let playerId = null;
@@ -80,8 +101,32 @@ wss.on('connection', (ws) => {
   ws.on('message', (raw) => {
     try {
       const msg = JSON.parse(raw);
+      
+      // Track identity from first message
+      if (msg.playerId) {
+        playerId = msg.playerId;
+        sessions.set(playerId, { 
+          name: msg.playerName || 'Guest',
+          lastSeen: Date.now()
+        });
+      }
+      
+      if (!playerId) return;
+
+      // Update last seen
+      if (sessions.has(playerId)) {
+        sessions.get(playerId).lastSeen = Date.now();
+      }
+
       switch (msg.type) {
+        // ─── CREATE ROOM ───
         case 'CREATE_ROOM': {
+          // Prevent duplicate room membership
+          if (playerToRoom.has(playerId)) {
+            ws.send(JSON.stringify({ type: 'ERROR', message: 'You are already in a room — refresh to reset' }));
+            return;
+          }
+
           const code = makeRoomCode();
           const cats = msg.selectedCategories?.length >= 3
             ? ALL_CATEGORIES.filter(c => msg.selectedCategories.includes(c.id))
@@ -89,7 +134,7 @@ wss.on('connection', (ws) => {
           
           room = {
             id: code,
-            name: msg.roomName || `${msg.playerName}'s Game`,
+            name: msg.roomName || `${sessions.get(playerId).name}'s Game`,
             isPrivate: msg.isPrivate || false,
             totalRounds: msg.totalRounds || 5,
             timeLimit: msg.timeLimit || 60,
@@ -104,138 +149,214 @@ wss.on('connection', (ws) => {
             totals: {}
           };
           
-          playerId = msg.playerId;
           roomCode = code;
           rooms.set(code, room);
+          playerToRoom.set(playerId, code);
           
           room.players.push({
             id: playerId,
-            name: msg.playerName || 'Guest',
+            name: sessions.get(playerId).name,
             ws,
             isHost: true
           });
           
-          ws.send(JSON.stringify({ type: 'ROOM_CREATED', code, room }));
-          broadcast(room)({ type: 'PLAYERS_UPDATED', players: room.players.map(p => ({id:p.id,name:p.name,isHost:p.isHost})) });
+          ws.send(JSON.stringify({ 
+            type: 'ROOM_CREATED', 
+            code, 
+            room,
+            yourId: playerId
+          }));
+          broadcast(room, playerId)({ 
+            type: 'PLAYERS_UPDATED', 
+            players: room.players.map(p => ({id:p.id,name:p.name,isHost:p.isHost})) 
+          });
           break;
         }
 
+        // ─── JOIN ROOM ───
         case 'JOIN_ROOM': {
-          roomCode = msg.code?.toUpperCase();
-          room = rooms.get(roomCode);
+          const targetCode = msg.code?.toUpperCase();
+          const targetRoom = rooms.get(targetCode);
           
-          if (!room) {
+          if (!targetRoom) {
             ws.send(JSON.stringify({ type: 'ERROR', message: 'Room not found — check the code!' }));
             return;
           }
-          if (room.players.length >= room.maxPlayers) {
-            ws.send(JSON.stringify({ type: 'ERROR', message: 'Room is full' }));
-            return;
-          }
-          if (room.status !== 'waiting') {
+          if (targetRoom.status !== 'waiting') {
             ws.send(JSON.stringify({ type: 'ERROR', message: 'Game already in progress' }));
             return;
           }
+          if (targetRoom.players.length >= targetRoom.maxPlayers) {
+            ws.send(JSON.stringify({ type: 'ERROR', message: 'Room is full' }));
+            return;
+          }
+
+          // 🔑 KEY FIX: Leave old room if rejoining same/different room
+          const existingRoomCode = playerToRoom.get(playerId);
+          if (existingRoomCode && existingRoomCode !== targetCode) {
+            cleanupPlayerFromRoom(playerId, rooms.get(existingRoomCode));
+          }
           
-          playerId = msg.playerId;
+          // Prevent duplicates in THIS room
+          const existingPlayer = targetRoom.players.find(p => p.id === playerId);
+          if (existingPlayer) {
+            // Reconnection — update their WebSocket only
+            existingPlayer.ws = ws;
+            room = targetRoom;
+            roomCode = targetCode;
+            playerToRoom.set(playerId, targetCode);
+            
+            ws.send(JSON.stringify({ 
+              type: 'ROOM_JOINED', 
+              room,
+              yourId: playerId,
+              isReconnect: true
+            }));
+            return; // ← NO new player added! ✅
+          }
+          
+          // Fresh join
+          room = targetRoom;
+          roomCode = targetCode;
+          playerToRoom.set(playerId, targetCode);
+          
           room.players.push({
             id: playerId,
-            name: msg.playerName || 'Guest',
+            name: sessions.get(playerId).name,
             ws,
             isHost: false
           });
           
-          ws.send(JSON.stringify({ type: 'ROOM_JOINED', room, playerId }));
-          broadcast(room)({ type: 'PLAYERS_UPDATED', players: room.players.map(p => ({id:p.id,name:p.name,isHost:p.isHost})) });
+          ws.send(JSON.stringify({ 
+            type: 'ROOM_JOINED', 
+            room,
+            yourId: playerId
+          }));
+          broadcast(room, playerId)({ 
+            type: 'PLAYERS_UPDATED', 
+            players: room.players.map(p => ({id:p.id,name:p.name,isHost:p.isHost})) 
+          });
           break;
         }
 
+        // ─── LIST ROOMS ───
         case 'LIST_ROOMS': {
           const list = Array.from(rooms.values())
             .filter(r => !r.isPrivate && r.status === 'waiting')
-            .map(r => ({ code: r.id, name: r.name, players: r.players.length, maxPlayers: r.maxPlayers }));
+            .map(r => ({ 
+              code: r.id, 
+              name: r.name, 
+              players: r.players.length, 
+              maxPlayers: r.maxPlayers 
+            }));
           ws.send(JSON.stringify({ type: 'ROOM_LIST', rooms: list }));
           break;
         }
 
+        // ─── START GAME ───
         case 'START_GAME': {
+          room = rooms.get(msg.roomCode || roomCode);
           if (!room) return;
+          
+          const isHost = room.players.some(p => p.id === playerId && p.isHost);
+          if (!isHost) {
+            ws.send(JSON.stringify({ type: 'ERROR', message: 'Only host can start' }));
+            return;
+          }
+          
           room.status = 'playing';
           room.currentRound = 1;
           room.letter = generateLetter();
           room.answers = {};
           room.votes = {};
           
-          broadcast(room)({
+          const startMsg = {
             type: 'ROUND_START',
             round: room.currentRound,
             totalRounds: room.totalRounds,
             letter: room.letter,
             categories: room.categories,
             timeLimit: room.timeLimit
+          };
+          
+          room.players.forEach(p => {
+            if (p.ws.readyState === WebSocket.OPEN) {
+              p.ws.send(JSON.stringify(startMsg));
+            }
           });
-          // Also send to host who sent this message
-          ws.send(JSON.stringify({
-            type: 'ROUND_START',
-            round: room.currentRound,
-            totalRounds: room.totalRounds,
-            letter: room.letter,
-            categories: room.categories,
-            timeLimit: room.timeLimit
-          }));
           break;
         }
 
+        // ─── SUBMIT ANSWER ───
         case 'SUBMIT_ANSWER': {
+          room = rooms.get(msg.roomCode || roomCode);
           if (!room) return;
           if (!room.answers[playerId]) room.answers[playerId] = {};
           room.answers[playerId][msg.categoryId] = msg.answer || '';
           break;
         }
 
+        // ─── PRESSED STOP ───
         case 'PRESSED_STOP': {
+          room = rooms.get(msg.roomCode || roomCode);
           if (!room || room.status !== 'playing') return;
           room.status = 'voting';
           const byName = room.players.find(p => p.id === playerId)?.name || 'Someone';
-          broadcast(room)({ type: 'STOP_CALLED', byName });
-          ws.send(JSON.stringify({ type: 'STOP_CALLED', byName }));
+          
+          const stopMsg = { type: 'STOP_CALLED', byName };
+          room.players.forEach(p => {
+            if (p.ws.readyState === WebSocket.OPEN) p.ws.send(JSON.stringify(stopMsg));
+          });
           
           setTimeout(() => {
             const ansData = {};
             for (const pid in room.answers) {
               ansData[pid] = { ...room.answers[pid] };
             }
-            broadcast(room)({ type: 'VOTING_START', answers: ansData, categories: room.categories });
-            ws.send(JSON.stringify({ type: 'VOTING_START', answers: ansData, categories: room.categories }));
+            const voteMsg = { type: 'VOTING_START', answers: ansData, categories: room.categories };
+            room.players.forEach(p => {
+              if (p.ws.readyState === WebSocket.OPEN) p.ws.send(JSON.stringify(voteMsg));
+            });
           }, 600);
           break;
         }
 
+        // ─── TIME UP ───
         case 'TIME_UP': {
+          room = rooms.get(msg.roomCode || roomCode);
           if (!room || room.status !== 'playing') return;
           room.status = 'voting';
-          broadcast(room)({ type: 'TIME_UP' });
-          ws.send(JSON.stringify({ type: 'TIME_UP' }));
+          
+          const timeMsg = { type: 'TIME_UP' };
+          room.players.forEach(p => {
+            if (p.ws.readyState === WebSocket.OPEN) p.ws.send(JSON.stringify(timeMsg));
+          });
           
           setTimeout(() => {
             const ansData = {};
             for (const pid in room.answers) {
               ansData[pid] = { ...room.answers[pid] };
             }
-            broadcast(room)({ type: 'VOTING_START', answers: ansData, categories: room.categories });
-            ws.send(JSON.stringify({ type: 'VOTING_START', answers: ansData, categories: room.categories }));
+            const voteMsg = { type: 'VOTING_START', answers: ansData, categories: room.categories };
+            room.players.forEach(p => {
+              if (p.ws.readyState === WebSocket.OPEN) p.ws.send(JSON.stringify(voteMsg));
+            });
           }, 600);
           break;
         }
 
+        // ─── SUBMIT VOTE ───
         case 'SUBMIT_VOTE': {
+          room = rooms.get(msg.roomCode || roomCode);
           if (!room) return;
           if (!room.votes[msg.targetPlayer]) room.votes[msg.targetPlayer] = {};
           room.votes[msg.targetPlayer][msg.categoryId] = msg.isValid;
           break;
         }
 
+        // ─── FINISH VOTING ───
         case 'FINISH_VOTING': {
+          room = rooms.get(msg.roomCode || roomCode);
           if (!room) return;
           
           const seen = new Map();
@@ -271,13 +392,17 @@ wss.on('connection', (ws) => {
             totalScore: room.totals[p.id]
           })).sort((a, b) => b.totalScore - a.totalScore);
           
-          broadcast(room)({ type: 'SCORES', scoreboard: board });
-          ws.send(JSON.stringify({ type: 'SCORES', scoreboard: board }));
+          const scoreMsg = { type: 'SCORES', scoreboard: board };
+          room.players.forEach(p => {
+            if (p.ws.readyState === WebSocket.OPEN) p.ws.send(JSON.stringify(scoreMsg));
+          });
           
           setTimeout(() => {
             if (room.currentRound >= room.totalRounds) {
-              broadcast(room)({ type: 'GAME_END', finalRanking: board });
-              ws.send(JSON.stringify({ type: 'GAME_END', finalRanking: board }));
+              const endMsg = { type: 'GAME_END', finalRanking: board };
+              room.players.forEach(p => {
+                if (p.ws.readyState === WebSocket.OPEN) p.ws.send(JSON.stringify(endMsg));
+              });
             } else {
               room.currentRound++;
               room.letter = generateLetter();
@@ -285,22 +410,17 @@ wss.on('connection', (ws) => {
               room.votes = {};
               room.status = 'playing';
               
-              broadcast(room)({
+              const nextMsg = {
                 type: 'ROUND_START',
                 round: room.currentRound,
                 totalRounds: room.totalRounds,
                 letter: room.letter,
                 categories: room.categories,
                 timeLimit: room.timeLimit
+              };
+              room.players.forEach(p => {
+                if (p.ws.readyState === WebSocket.OPEN) p.ws.send(JSON.stringify(nextMsg));
               });
-              ws.send(JSON.stringify({
-                type: 'ROUND_START',
-                round: room.currentRound,
-                totalRounds: room.totalRounds,
-                letter: room.letter,
-                categories: room.categories,
-                timeLimit: room.timeLimit
-              }));
             }
           }, 5000);
           break;
@@ -311,21 +431,30 @@ wss.on('connection', (ws) => {
     }
   });
 
+  // ─── DISCONNECTION HANDLING ───
   ws.on('close', () => {
-    if (!roomCode || !playerId) return;
-    const r = rooms.get(roomCode);
-    if (!r) return;
-    const idx = r.players.findIndex(p => p.id === playerId);
-    if (idx !== -1) r.players.splice(idx, 1);
+    if (!playerId) return;
     
-    if (r.players.length === 0) {
-      rooms.delete(roomCode);
-    } else {
-      broadcast(r)({ type: 'PLAYERS_UPDATED', players: r.players.map(p => ({id:p.id,name:p.name,isHost:p.isHost})) });
-    }
+    const currentRoomCode = playerToRoom.get(playerId);
+    if (!currentRoomCode) return;
+    
+    const currentRoom = rooms.get(currentRoomCode);
+    if (!currentRoom) return;
+    
+    // Only remove if they didn't just reconnect elsewhere
+    // Brief grace period so quick refresh = reconnection, not removal
+    setTimeout(() => {
+      // If still not connected after grace period → remove
+      if (playerToRoom.has(playerId)) {
+        const stillHere = currentRoom.players.find(p => p.id === playerId && p.ws.readyState === WebSocket.OPEN);
+        if (!stillHere) {
+          cleanupPlayerFromRoom(playerId, currentRoom);
+        }
+      }
+    }, 1000); // 1 second grace for reconnection
   });
 });
 
 server.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
+  console.log(`✅ Game server running on port ${PORT}`);
 });
