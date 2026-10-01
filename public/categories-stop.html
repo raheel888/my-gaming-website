@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Categories Stop — Multiplayer</title>
+  <style>
+    :root {
+      --primary: #4f46e5; --accent: #f97316; --success: #10b981; --danger: #ef4444;
+      --bg: #f8fafc; --surface: #ffffff; --text: #1e293b; --muted: #94a3b8;
+      --radius: 12px; --shadow: 0 4px 12px rgba(0,0,0,0.08);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #0f172a; --surface: #1e293b; --text: #f1f5f9; --muted: #64748b; }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, sans-serif; }
+    body { background: var(--bg); color: var(--text); min-height: 100vh; padding: 1rem; }
+    .back-link { display: inline-block; color: var(--primary); margin-bottom: 1rem; text-decoration: none; }
+    .back-link:hover { text-decoration: underline; }
+    .screen { display: none; max-width: 900px; margin: 0 auto; }
+    .screen.active { display: block; }
+    .game-title { text-align: center; font-size: 2rem; margin: 1rem 0; color: var(--primary); }
+    .subtitle { text-align: center; color: var(--muted); margin-bottom: 2rem; }
+    .btn { padding: 0.75rem 1.25rem; border-radius: var(--radius); border: none; font-size: 1rem; cursor: pointer; background: var(--muted); color: white; transition: all 0.2s; }
+    .btn.primary { background: var(--primary); }
+    .btn.primary:hover { background: #4338ca; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-group { display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1.5rem; }
+    .full-width { width: 100%; }
+    .input { padding: 0.75rem 1rem; border-radius: var(--radius); border: 2px solid transparent; background: var(--surface); color: var(--text); font-size: 1rem; width: 100%; }
+    .input:focus { outline: none; border-color: var(--primary); }
+    .join-row { display: flex; gap: 0.5rem; }
+    .code-input { max-width: 160px; text-transform: uppercase; letter-spacing: 2px; }
+    .room-list { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); }
+    .room-item { padding: 0.75rem 1rem; border-bottom: 1px solid rgba(128,128,128,0.1); cursor: pointer; }
+    .room-item:hover { background: rgba(79,70,229,0.05); }
+    .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+    .room-code-badge { background: var(--primary); color: white; padding: 0.5rem 1rem; border-radius: 999px; font-weight: bold; letter-spacing: 2px; }
+    .room-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1rem; }
+    .cat-list { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+    .player-list { background: var(--surface); border-radius: var(--radius); padding: 1rem; margin-bottom: 1rem; min-height: 120px; }
+    .player-row { padding: 0.5rem 0; border-bottom: 1px solid rgba(128,128,128,0.1); }
+    .letter-zone { text-align: center; margin: 1.5rem 0; }
+    .letter-display { font-size: 5rem; font-weight: 900; animation: popIn 0.5s ease-out; }
+    @keyframes popIn { 0% { transform: scale(0); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+    .round-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+    .timer { font-size: 1.5rem; font-weight: bold; padding: 0.5rem 1rem; border-radius: 999px; background: var(--accent); color: white; }
+    .timer.urgent { background: var(--danger); animation: pulse 0.5s infinite; }
+    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+    .answers-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1.5rem; }
+    @media (max-width: 600px) { .answers-grid { grid-template-columns: 1fr; } .room-layout { grid-template-columns: 1fr; } }
+    .answer-card { background: var(--surface); padding: 1rem; border-radius: var(--radius); box-shadow: var(--shadow); }
+    .stop-zone { text-align: center; margin: 1.5rem 0; }
+    .stop-btn { background: linear-gradient(135deg, var(--accent), var(--danger)); font-size: 1.5rem; font-weight: 900; padding: 1rem 3rem; border-radius: 999px; border: none; color: white; cursor: pointer; transition: transform 0.1s; }
+    .stop-btn:active { transform: scale(0.95); }
+    .stop-btn:disabled { opacity: 0.3; cursor: not-allowed; transform: none; }
+    .vote-block { background: var(--surface); padding: 1rem; border-radius: var(--radius); margin-bottom: 1rem; }
+    .vote-row { display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid rgba(128,128,128,0.1); flex-wrap: wrap; gap: 0.5rem; }
+    .vote-btn { padding: 0.4rem 0.8rem; border-radius: 8px; border: none; cursor: pointer; margin: 0 0.2rem; }
+    .vote-btn.yes { background: var(--success); color: white; }
+    .vote-btn.no { background: var(--danger); color: white; }
+    .score-row { display: flex; justify-content: space-between; padding: 0.75rem 1rem; border-bottom: 1px solid rgba(128,128,128,0.1); }
+    .score-row.me { background: rgba(79,70,229,0.1); font-weight: bold; }
+    .status-note { text-align: center; color: var(--muted); margin: 0.5rem; }
+    .error-box { background: rgba(239,68,68,0.1); color: var(--danger); padding: 0.75rem; border-radius: 8px; margin: 1rem 0; display: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <a href="/" class="back-link">← Back to Games</a>
+    
+    <div id="app">
+      <div id="error-box" class="error-box"></div>
+      
+      <!-- Lobby Screen -->
+      <section id="lobby-screen" class="screen active">
+        <h1 class="game-title">🔤 Categories Stop</h1>
+        <p class="subtitle">Multiplayer — Race to find words!</p>
+        <div style="margin-bottom:1rem;">
+          <input type="text" id="player-name" placeholder="Your nickname" maxlength="20" class="input" value="Guest">
+        </div>
+        <div class="btn-group">
+          <button id="create-room-btn" class="btn primary">➕ Create Room</button>
+          <div class="join-row">
+            <input type="text" id="join-code" placeholder="Room Code" class="input code-input" maxlength="6">
+            <button id="join-btn" class="btn">Join</button>
+          </div>
+        </div>
+        <div>
+          <h3>Open Rooms</h3>
+          <div id="room-list" class="room-list"></div>
+        </div>
+        <p id="connection-status" class="status-note">Connecting...</p>
+      </section>
+
+      <!-- Room Screen -->
+      <section id="room-screen" class="screen">
+        <div class="top-bar">
+          <h2>Room Lobby</h2>
+          <div class="room-code-badge" id="show-code">------</div>
+        </div>
+        <div class="room-layout">
+          <div>
+            <label style="display:block;margin:0.5rem 0;"><input type="checkbox" id="private-toggle"> Private Room</label>
+            <label style="display:block;margin:0.5rem 0;">Rounds: <input type="number" id="rounds-set" min="3" max="10" value="5" style="width:60px;"></label>
+            <label style="display:block;margin:0.5rem 0;">Time: <input type="number" id="time-set" min="15" max="120" value="60" style="width:60px;"> sec</label>
+            <label style="display:block;margin:0.5rem 0;">Max Players: <input type="number" id="maxp-set" min="2" max="14" value="8" style="width:60px;"></label>
+            <h4>Categories</h4>
+            <p style="font-size:0.8rem;color:var(--muted)">Check none = use all categories</p>
+            <div id="cat-checks" class="cat-list"></div>
+          </div>
+          <div>
+            <h4>Players</h4>
+            <div id="player-list" class="player-list"></div>
+            <button id="start-game-btn" class="btn primary full-width">Start Game</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Play Screen -->
+      <section id="play-screen" class="screen">
+        <div class="round-header">
+          <div>Round <span id="r-num">1</span>/<span id="r-total">5</span></div>
+          <div id="timer-display" class="timer">60</div>
+        </div>
+        <div class="letter-zone"><div id="letter-show" class="letter-display">?</div></div>
+        <div id="answers-grid" class="answers-grid"></div>
+        <div class="stop-zone"><button id="stop-button" class="stop-btn" disabled>STOP!</button></div>
+      </section>
+
+      <!-- Vote Screen -->
+      <section id="vote-screen" class="screen">
+        <h2 style="text-align:center;margin:1rem;">✅ Check Answers</h2>
+        <p style="text-align:center;color:var(--muted);margin-bottom:1rem;">Mark answers valid ✅ or invalid ❌</p>
+        <div id="voting-area"></div>
+        <button id="voting-done" class="btn primary full-width">Finish Voting & Show Scores</button>
+      </section>
+
+      <!-- Scores Screen -->
+      <section id="scores-screen" class="screen">
+        <h2 style="text-align:center;margin:1rem;">📊 Round Results</h2>
+        <div id="scoreboard-area"></div>
+        <p style="text-align:center;color:var(--muted);margin-top:1rem;">Next round starting soon...</p>
+      </section>
+
+      <!-- Final Results Screen -->
+      <section id="results-screen" class="screen">
+        <h1 class="game-title">🎉 Game Over!</h1>
+        <div id="final-ranking"></div>
+        <div class="btn-group" style="margin-top:2rem;">
+          <button id="play-again" class="btn primary full-width">🔄 New Game</button>
+          <a href="/" style="text-align:center;color:var(--primary);display:block;margin-top:0.5rem;text-decoration:none;">← Back to Home</a>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    // Auto-detect server — works locally AND on Railway
+    const WS_PROTO = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const WS_URL = `${WS_PROTO}//${location.host}`;
+    
+    const playerId = crypto.randomUUID();
+    let playerName = localStorage.getItem('cs_name') || 'Guest';
+    let ws = null;
+    let currentRoomCode = null;
+    let currentCategories = [];
+    let timerInterval = null;
+    let reconnectAttempts = 0;
+    const MAX_RECONNECT = 5;
+
+    const ALL_CATEGORIES = [
+      { id: 'country', name: 'Country' }, { id: 'city', name: 'City' },
+      { id: 'animal', name: 'Animal' }, { id: 'food', name: 'Food' },
+      { id: 'color', name: 'Colour' }, { id: 'name', name: 'Name' },
+      { id: 'object', name: 'Object' }, { id: 'plant', name: 'Plant' },
+      { id: 'brand', name: 'Brand' }, { id: 'movie', name: 'Movie' },
+      { id: 'book', name: 'Book' }, { id: 'river', name: 'River' }
+    ];
+
+    // === UI Helpers ===
+    function showScreen(name) {
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      document.getElementById(`${name}-screen`).classList.add('active');
+    }
+
+    function showError(msg) {
+      const box = document.getElementById('error-box');
+      box.textContent = '⚠️ ' + msg;
+      box.style.display = 'block';
+      setTimeout(() => box.style.display = 'none', 4000);
+    }
+
+    function send(msg) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(msg));
+      } else {
+        showError('Not connected — reconnecting...');
+        connect();
+      }
+    }
+
+    // === Connection ===
+    function connect() {
+      document.getElementById('connection-status').textContent = '🔄 Connecting...';
+      
+      try {
+        ws = new WebSocket(WS_URL);
+      } catch (e) {
+        console.error('Connection error:', e);
+        scheduleReconnect();
+        return;
+      }
+
+      ws.onopen = () => {
+        document.getElementById('connection-status').textContent = '✅ Connected';
+        reconnectAttempts = 0;
+        refreshRoomList();
+      };
+
+      ws.onclose = () => {
+        document.getElementById('connection-status').textContent = '🔄 Disconnected';
+        scheduleReconnect();
+      };
+
+      ws.onerror = (err) => {
+        console.error('WebSocket error:', err);
+        showError('Connection issue — will retry');
+      };
+
+      ws.onmessage = handleMessage;
+    }
+
+    function scheduleReconnect() {
+      if (reconnectAttempts >= MAX_RECONNECT) {
+        showError('Could not connect. Refresh to try again.');
+        document.getElementById('connection-status').textContent = '❌ Offline';
+        return;
+      }
+      reconnectAttempts++;
+      const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 8000);
+      setTimeout(connect, delay);
+    }
+
+    // === Message Handlers ===
+    function handleMessage(event) {
+      const msg = JSON.parse(event.data);
+      console.log('←', msg.type, msg);
+
+      switch (msg.type) {
+        case 'ROOM_LIST':
+          renderRoomList(msg.rooms);
+          break;
+          
+        case 'ROOM_CREATED':
+        case 'ROOM_JOINED':
+          currentRoomCode = msg.code;
+          currentCategories = msg.room.categories;
+          document.getElementById('show-code').textContent = msg.code;
+          showScreen('room');
+          renderPlayers(msg.room.players);
+          renderCategoryChecks(msg.room.categories.map(c => c.id));
+          break;
+          
+        case 'PLAYERS_UPDATED':
+          renderPlayers(msg.players);
+          break;
+          
+        case 'ROUND_START':
+          currentCategories = msg.categories;
+          showScreen('play');
+          document.getElementById('r-num').textContent = msg.round;
+          document.getElementById('r-total').textContent = msg.totalRounds;
+          document.getElementById('letter-show').textContent = '';
+          setTimeout(() => document.getElementById('letter-show').textContent = msg.letter, 300);
+          buildAnswerInputs();
+          startTimer(msg.timeLimit);
+          break;
+          
+        case 'STOP_CALLED':
+          freezeInputs();
+          showError(`🛑 ${msg.byName || 'Someone'} pressed STOP!`);
+          break;
+          
+        case 'TIME_UP':
+          freezeInputs();
+          showError('⏰ Time\'s up!');
+          break;
+          
+        case 'VOTING_START':
+          showScreen('vote');
+          renderVoting(msg.answers, msg.categories);
+          break;
+          
+        case 'SCORES':
+          showScreen('scores');
+          document.getElementById('scoreboard-area').innerHTML = msg.scoreboard.map((r, i) =>
+            `<div class="score-row ${r.playerId === playerId ? 'me' : ''}">#${i+1} ${r.name} — +${r.roundScore} = ${r.totalScore}</div>`
+          ).join('');
+          break;
+          
+        case 'GAME_END':
+          showScreen('results');
+          document.getElementById('final-ranking').innerHTML = msg.finalRanking.map((r, i) =>
+            `<div class="score-row ${r.playerId === playerId ? 'me' : ''}" style="font-size:1.2rem;">${i===0?'🏆':''} #${i+1} ${r.name} — ${r.totalScore} pts</div>`
+          ).join('');
+          break;
+          
+        case 'ERROR':
+          showError(msg.message);
+          break;
+      }
+    }
+
+    // === Render Functions ===
+    function renderCategoryChecks(selectedIds = []) {
+      const c = document.getElementById('cat-checks'); c.innerHTML = '';
+      ALL_CATEGORIES.forEach(cat => {
+        const ch = selectedIds.includes(cat.id) ? 'checked' : '';
+        c.innerHTML += `<label style="display:flex;gap:0.3rem;"><input type="checkbox" value="${cat.id}" ${ch}> ${cat.name}</label>`;
+      });
+    }
+
+    function renderPlayers(players) {
+      document.getElementById('player-list').innerHTML = players.map(p =>
+        `<div class="player-row">${p.name} ${p.isHost?'👑':''}</div>`
+      ).join('');
+      
+      // Show/hide start button — only host sees it
+      const isHost = players.some(p => p.id === playerId && p.isHost);
+      document.getElementById('start-game-btn').style.display = isHost ? 'block' : 'none';
+    }
+
+    function renderRoomList(rooms) {
+      const list = document.getElementById('room-list');
+      if (!rooms.length) {
+        list.innerHTML = '<p style="padding:1rem;color:var(--muted)">No open rooms — create one below!</p>';
+        return;
+      }
+      list.innerHTML = rooms.map(r =>
+        `<div class="room-item" data-code="${r.code}"><strong>${r.name}</strong> — ${r.players}/${r.maxPlayers} players</div>`
+      ).join('');
+      list.querySelectorAll('.room-item').forEach(el => {
+        el.onclick = () => document.getElementById('join-code').value = el.dataset.code;
+      });
+    }
+
+    function refreshRoomList() {
+      send({ type: 'LIST_ROOMS' });
+    }
+
+    // === Gameplay ===
+    function buildAnswerInputs() {
+      const grid = document.getElementById('answers-grid');
+      grid.innerHTML = currentCategories.map(cat =>
+        `<div class="answer-card"><label>${cat.name}</label><input type="text" class="input answer-input" data-cat="${cat.id}" placeholder="Answer…" autocomplete="off"></div>`
+      ).join('');
+      document.getElementById('stop-button').disabled = true;
+      
+      document.querySelectorAll('.answer-input').forEach(inp => {
+        inp.oninput = () => {
+          const allFilled = Array.from(document.querySelectorAll('.answer-input')).every(i => i.value.trim() !== '');
+          document.getElementById('stop-button').disabled = !allFilled;
+          send({
+            type: 'SUBMIT_ANSWER',
+            roomCode: currentRoomCode,
+            categoryId: inp.dataset.cat,
+            answer: inp.value
+          });
+        };
+      });
+    }
+
+    function freezeInputs() {
+      clearInterval(timerInterval);
+      document.querySelectorAll('.answer-input').forEach(i => i.disabled = true);
+      document.getElementById('stop-button').disabled = true;
+    }
+
+    function startTimer(seconds) {
+      clearInterval(timerInterval);
+      let t = seconds;
+      const el = document.getElementById('timer-display');
+      el.textContent = t; el.classList.remove('urgent');
+      
+      timerInterval = setInterval(() => {
+        t--; el.textContent = t;
+        if (t <= 10) el.classList.add('urgent');
+        if (t <= 0) {
+          clearInterval(timerInterval);
+          send({ type: 'TIME_UP', roomCode: currentRoomCode });
+        }
+      }, 1000);
+    }
+
+    function renderVoting(answers, categories) {
+      const area = document.getElementById('voting-area'); area.innerHTML = '';
+      
+      for (const pid in answers) {
+        // Try to match player name
+        const name = pid;
+        area.innerHTML += `<div class="vote-block"><h4>Player: ${name}</h4>`;
+        
+        categories.forEach(cat => {
+          const ans = answers[pid][cat.id] || '';
+          area.innerHTML += `
+            <div class="vote-row">
+              <span><strong>${cat.name}:</strong> ${ans || '—'}</span>
+              <div>
+                <button class="vote-btn yes" data-target="${pid}" data-cat="${cat.id}" data-val="true">✅</button>
+                <button class="vote-btn no" data-target="${pid}" data-cat="${cat.id}" data-val="false">❌</button>
+              </div>
+            </div>`;
+        });
+        area.innerHTML += `</div>`;
+      }
+      
+      area.querySelectorAll('.vote-btn').forEach(btn => {
+        btn.onclick = () => {
+          send({
+            type: 'SUBMIT_VOTE',
+            roomCode: currentRoomCode,
+            targetPlayer: btn.dataset.target,
+            categoryId: btn.dataset.cat,
+            isValid: btn.dataset.val === 'true'
+          });
+          btn.style.opacity = '0.4';
+          btn.disabled = true;
+        };
+      });
+    }
+
+    // === Init ===
+    document.addEventListener('DOMContentLoaded', () => {
+      const nameInput = document.getElementById('player-name');
+      nameInput.value = playerName;
+      nameInput.oninput = e => {
+        playerName = e.target.value.trim() || 'Guest';
+        localStorage.setItem('cs_name', playerName);
+      };
+
+      connect();
+      renderCategoryChecks();
+      setInterval(refreshRoomList, 4000);
+
+      // Buttons
+      document.getElementById('create-room-btn').onclick = () => {
+        const selected = Array.from(document.querySelectorAll('#cat-checks input:checked')).map(i => i.value);
+        send({
+          type: 'CREATE_ROOM',
+          playerId,
+          playerName,
+          roomName: `${playerName}'s Game`,
+          isPrivate: document.getElementById('private-toggle').checked,
+          totalRounds: parseInt(document.getElementById('rounds-set').value),
+          timeLimit: parseInt(document.getElementById('time-set').value),
+          maxPlayers: parseInt(document.getElementById('maxp-set').value),
+          selectedCategories: selected.length >= 3 ? selected : null
+        });
+      };
+
+      document.getElementById('join-btn').onclick = () => {
+        const code = document.getElementById('join-code').value.trim().toUpperCase();
+        if (!code) return showError('Please enter a room code');
+        send({ type: 'JOIN_ROOM', code, playerId, playerName });
+      };
+
+      document.getElementById('start-game-btn').onclick = () => {
+        send({ type: 'START_GAME', roomCode: currentRoomCode });
+      };
+
+      document.getElementById('stop-button').onclick = () => {
+        freezeInputs();
+        send({ type: 'PRESSED_STOP', roomCode: currentRoomCode });
+      };
+
+      document.getElementById('voting-done').onclick = () => {
+        send({ type: 'FINISH_VOTING', roomCode: currentRoomCode });
+      };
+
+      document.getElementById('play-again').onclick = () => {
+        location.href = '/categories-stop';
+      };
+    });
+  </script>
+</body>
+</html>
