@@ -40,6 +40,7 @@
     .cat-list { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
     .player-list { background: var(--surface); border-radius: var(--radius); padding: 1rem; margin-bottom: 1rem; min-height: 120px; }
     .player-row { padding: 0.5rem 0; border-bottom: 1px solid rgba(128,128,128,0.1); }
+    .player-row.you { font-weight: bold; color: var(--primary); }
     .letter-zone { text-align: center; margin: 1.5rem 0; }
     .letter-display { font-size: 5rem; font-weight: 900; animation: popIn 0.5s ease-out; }
     @keyframes popIn { 0% { transform: scale(0); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
@@ -63,6 +64,7 @@
     .score-row.me { background: rgba(79,70,229,0.1); font-weight: bold; }
     .status-note { text-align: center; color: var(--muted); margin: 0.5rem; }
     .error-box { background: rgba(239,68,68,0.1); color: var(--danger); padding: 0.75rem; border-radius: 8px; margin: 1rem 0; display: none; }
+    .success-box { background: rgba(16,185,129,0.1); color: var(--success); padding: 0.75rem; border-radius: 8px; margin: 1rem 0; display: none; }
   </style>
 </head>
 <body>
@@ -71,6 +73,7 @@
     
     <div id="app">
       <div id="error-box" class="error-box"></div>
+      <div id="success-box" class="success-box"></div>
       
       <!-- Lobby Screen -->
       <section id="lobby-screen" class="screen active">
@@ -156,12 +159,28 @@
   </div>
 
   <script>
-    // Auto-detect server — works locally AND on Railway
+    // ─── PERSISTENT IDENTITY ───
+    // Stable ID — survives refresh, back button, same browser session
+    const STORAGE_KEYS = {
+      PLAYER_ID: 'cs_player_id_v2',
+      PLAYER_NAME: 'cs_player_name',
+      LAST_ROOM: 'cs_last_room'
+    };
+
+    // Get or create stable player ID
+    let playerId = localStorage.getItem(STORAGE_KEYS.PLAYER_ID);
+    if (!playerId) {
+      playerId = crypto.randomUUID();
+      localStorage.setItem(STORAGE_KEYS.PLAYER_ID, playerId);
+    }
+
+    let playerName = localStorage.getItem(STORAGE_KEYS.PLAYER_NAME) || 'Guest';
+    let lastRoomCode = sessionStorage.getItem(STORAGE_KEYS.LAST_ROOM) || null;
+
+    // ─── CONNECTION ───
     const WS_PROTO = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const WS_URL = `${WS_PROTO}//${location.host}`;
     
-    const playerId = crypto.randomUUID();
-    let playerName = localStorage.getItem('cs_name') || 'Guest';
     let ws = null;
     let currentRoomCode = null;
     let currentCategories = [];
@@ -178,7 +197,7 @@
       { id: 'book', name: 'Book' }, { id: 'river', name: 'River' }
     ];
 
-    // === UI Helpers ===
+    // ─── UI HELPERS ───
     function showScreen(name) {
       document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
       document.getElementById(`${name}-screen`).classList.add('active');
@@ -191,7 +210,18 @@
       setTimeout(() => box.style.display = 'none', 4000);
     }
 
+    function showSuccess(msg) {
+      const box = document.getElementById('success-box');
+      box.textContent = '✅ ' + msg;
+      box.style.display = 'block';
+      setTimeout(() => box.style.display = 'none', 3000);
+    }
+
     function send(msg) {
+      // Always include identity
+      msg.playerId = playerId;
+      msg.playerName = playerName;
+      
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(msg));
       } else {
@@ -200,7 +230,17 @@
       }
     }
 
-    // === Connection ===
+    function saveRoomCode(code) {
+      currentRoomCode = code;
+      sessionStorage.setItem(STORAGE_KEYS.LAST_ROOM, code);
+    }
+
+    function clearSavedRoom() {
+      currentRoomCode = null;
+      sessionStorage.removeItem(STORAGE_KEYS.LAST_ROOM);
+    }
+
+    // ─── CONNECTION MANAGEMENT ───
     function connect() {
       document.getElementById('connection-status').textContent = '🔄 Connecting...';
       
@@ -216,6 +256,15 @@
         document.getElementById('connection-status').textContent = '✅ Connected';
         reconnectAttempts = 0;
         refreshRoomList();
+        
+        // Auto-rejoin if we were in a room before
+        if (lastRoomCode && !currentRoomCode) {
+          showSuccess('Reconnecting to your room...');
+          setTimeout(() => {
+            document.getElementById('join-code').value = lastRoomCode;
+            send({ type: 'JOIN_ROOM', code: lastRoomCode });
+          }, 500);
+        }
       };
 
       ws.onclose = () => {
@@ -242,7 +291,7 @@
       setTimeout(connect, delay);
     }
 
-    // === Message Handlers ===
+    // ─── MESSAGE HANDLING ───
     function handleMessage(event) {
       const msg = JSON.parse(event.data);
       console.log('←', msg.type, msg);
@@ -253,13 +302,25 @@
           break;
           
         case 'ROOM_CREATED':
-        case 'ROOM_JOINED':
-          currentRoomCode = msg.code;
+          saveRoomCode(msg.code);
           currentCategories = msg.room.categories;
           document.getElementById('show-code').textContent = msg.code;
           showScreen('room');
           renderPlayers(msg.room.players);
           renderCategoryChecks(msg.room.categories.map(c => c.id));
+          showSuccess('Room created! Share code: ' + msg.code);
+          break;
+          
+        case 'ROOM_JOINED':
+          saveRoomCode(msg.code);
+          currentCategories = msg.room.categories;
+          document.getElementById('show-code').textContent = msg.code;
+          showScreen('room');
+          renderPlayers(msg.room.players);
+          renderCategoryChecks(msg.room.categories.map(c => c.id));
+          if (msg.isReconnect) {
+            showSuccess('Welcome back! Reconnected.');
+          }
           break;
           
         case 'PLAYERS_UPDATED':
@@ -279,7 +340,7 @@
           
         case 'STOP_CALLED':
           freezeInputs();
-          showError(`🛑 ${msg.byName || 'Someone'} pressed STOP!`);
+          showSuccess(`🛑 ${msg.byName || 'Someone'} pressed STOP!`);
           break;
           
         case 'TIME_UP':
@@ -300,6 +361,7 @@
           break;
           
         case 'GAME_END':
+          clearSavedRoom();
           showScreen('results');
           document.getElementById('final-ranking').innerHTML = msg.finalRanking.map((r, i) =>
             `<div class="score-row ${r.playerId === playerId ? 'me' : ''}" style="font-size:1.2rem;">${i===0?'🏆':''} #${i+1} ${r.name} — ${r.totalScore} pts</div>`
@@ -312,7 +374,7 @@
       }
     }
 
-    // === Render Functions ===
+    // ─── RENDER FUNCTIONS ───
     function renderCategoryChecks(selectedIds = []) {
       const c = document.getElementById('cat-checks'); c.innerHTML = '';
       ALL_CATEGORIES.forEach(cat => {
@@ -323,10 +385,10 @@
 
     function renderPlayers(players) {
       document.getElementById('player-list').innerHTML = players.map(p =>
-        `<div class="player-row">${p.name} ${p.isHost?'👑':''}</div>`
+        `<div class="player-row ${p.id === playerId ? 'you' : ''}">${p.name} ${p.isHost?'👑':''} ${p.id === playerId?'(You)':''}</div>`
       ).join('');
       
-      // Show/hide start button — only host sees it
+      // Only host sees start button
       const isHost = players.some(p => p.id === playerId && p.isHost);
       document.getElementById('start-game-btn').style.display = isHost ? 'block' : 'none';
     }
@@ -349,7 +411,7 @@
       send({ type: 'LIST_ROOMS' });
     }
 
-    // === Gameplay ===
+    // ─── GAMEPLAY ───
     function buildAnswerInputs() {
       const grid = document.getElementById('answers-grid');
       grid.innerHTML = currentCategories.map(cat =>
@@ -363,7 +425,6 @@
           document.getElementById('stop-button').disabled = !allFilled;
           send({
             type: 'SUBMIT_ANSWER',
-            roomCode: currentRoomCode,
             categoryId: inp.dataset.cat,
             answer: inp.value
           });
@@ -388,7 +449,7 @@
         if (t <= 10) el.classList.add('urgent');
         if (t <= 0) {
           clearInterval(timerInterval);
-          send({ type: 'TIME_UP', roomCode: currentRoomCode });
+          send({ type: 'TIME_UP' });
         }
       }, 1000);
     }
@@ -397,10 +458,7 @@
       const area = document.getElementById('voting-area'); area.innerHTML = '';
       
       for (const pid in answers) {
-        // Try to match player name
-        const name = pid;
-        area.innerHTML += `<div class="vote-block"><h4>Player: ${name}</h4>`;
-        
+        area.innerHTML += `<div class="vote-block"><h4>Player</h4>`;
         categories.forEach(cat => {
           const ans = answers[pid][cat.id] || '';
           area.innerHTML += `
@@ -419,7 +477,6 @@
         btn.onclick = () => {
           send({
             type: 'SUBMIT_VOTE',
-            roomCode: currentRoomCode,
             targetPlayer: btn.dataset.target,
             categoryId: btn.dataset.cat,
             isValid: btn.dataset.val === 'true'
@@ -430,13 +487,13 @@
       });
     }
 
-    // === Init ===
+    // ─── INITIALIZATION ───
     document.addEventListener('DOMContentLoaded', () => {
       const nameInput = document.getElementById('player-name');
       nameInput.value = playerName;
       nameInput.oninput = e => {
         playerName = e.target.value.trim() || 'Guest';
-        localStorage.setItem('cs_name', playerName);
+        localStorage.setItem(STORAGE_KEYS.PLAYER_NAME, playerName);
       };
 
       connect();
@@ -448,9 +505,6 @@
         const selected = Array.from(document.querySelectorAll('#cat-checks input:checked')).map(i => i.value);
         send({
           type: 'CREATE_ROOM',
-          playerId,
-          playerName,
-          roomName: `${playerName}'s Game`,
           isPrivate: document.getElementById('private-toggle').checked,
           totalRounds: parseInt(document.getElementById('rounds-set').value),
           timeLimit: parseInt(document.getElementById('time-set').value),
@@ -462,7 +516,7 @@
       document.getElementById('join-btn').onclick = () => {
         const code = document.getElementById('join-code').value.trim().toUpperCase();
         if (!code) return showError('Please enter a room code');
-        send({ type: 'JOIN_ROOM', code, playerId, playerName });
+        send({ type: 'JOIN_ROOM', code });
       };
 
       document.getElementById('start-game-btn').onclick = () => {
@@ -479,6 +533,7 @@
       };
 
       document.getElementById('play-again').onclick = () => {
+        clearSavedRoom();
         location.href = '/categories-stop';
       };
     });
