@@ -5,22 +5,35 @@ const path = require('path');
 
 const PORT = process.env.PORT || 8080;
 
-// Serve the game page
+// Serve pages
 const server = http.createServer((req, res) => {
-  if (req.url === '/' || req.url === '/index.html') {
-    fs.readFile(path.join(__dirname, 'public', 'index.html'), (err, data) => {
-      if (err) {
-        res.writeHead(500);
-        res.end('Error loading game');
-        return;
-      }
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(data);
-    });
-    return;
+  console.log(`➡️ ${req.method} ${req.url}`);
+
+  let filePath = 'public/index.html'; // default = homepage
+  if (req.url === '/' || req.url === '/home' || req.url === '/index.html') {
+    filePath = 'public/index.html';
+  } else if (req.url === '/categories-stop' || req.url === '/categories-stop.html') {
+    filePath = 'public/categories-stop.html';
+  } else {
+    filePath = `public${req.url}`;
   }
-  res.writeHead(404);
-  res.end('Not found');
+
+  const ext = path.extname(filePath);
+  const types = {
+    '.html': 'text/html; charset=utf-8',
+    '.css': 'text/css; charset=utf-8',
+    '.js': 'text/javascript; charset=utf-8',
+    '.json': 'application/json'
+  };
+
+  fs.readFile(path.join(__dirname, filePath), (err, data) => {
+    if (err) {
+      res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+      return res.end('<h1>404 — Page not found</h1><a href="/">← Go Home</a>');
+    }
+    res.writeHead(200, { 'Content-Type': types[ext] || 'text/plain' });
+    res.end(data);
+  });
 });
 
 // === MULTIPLAYER GAME LOGIC ===
@@ -41,24 +54,28 @@ function makeRoomCode() {
 
 function generateLetter() {
   const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  const rare = ['Q', 'X', 'Z', 'Y', 'K'];
+  const rare = ['Q','X','Z','Y','K'];
   let l;
-  do {
-    l = letters[Math.floor(Math.random() * 26)];
-  } while (rare.includes(l) && Math.random() > 0.3);
+  do { l = letters[Math.floor(Math.random()*26)]; }
+  while (rare.includes(l) && Math.random() > 0.3);
   return l;
 }
 
-function broadcast(room, msg) {
-  const data = JSON.stringify(msg);
-  room.players.forEach(p => {
-    if (p.ws.readyState === WebSocket.OPEN) p.ws.send(data);
-  });
+function broadcast(room, excludeId = null) {
+  return (msg) => {
+    const data = JSON.stringify(msg);
+    room.players.forEach(p => {
+      if (p.id !== excludeId && p.ws.readyState === WebSocket.OPEN) {
+        p.ws.send(data);
+      }
+    });
+  };
 }
 
 wss.on('connection', (ws) => {
   let playerId = null;
   let roomCode = null;
+  let room = null;
 
   ws.on('message', (raw) => {
     try {
@@ -69,9 +86,10 @@ wss.on('connection', (ws) => {
           const cats = msg.selectedCategories?.length >= 3
             ? ALL_CATEGORIES.filter(c => msg.selectedCategories.includes(c.id))
             : ALL_CATEGORIES.slice(0, 6);
-          rooms.set(code, {
+          
+          room = {
             id: code,
-            name: msg.roomName || 'Game Room',
+            name: msg.roomName || `${msg.playerName}'s Game`,
             isPrivate: msg.isPrivate || false,
             totalRounds: msg.totalRounds || 5,
             timeLimit: msg.timeLimit || 60,
@@ -84,35 +102,54 @@ wss.on('connection', (ws) => {
             answers: {},
             votes: {},
             totals: {}
-          });
+          };
+          
           playerId = msg.playerId;
           roomCode = code;
-          rooms.get(code).players.push({
+          rooms.set(code, room);
+          
+          room.players.push({
             id: playerId,
             name: msg.playerName || 'Guest',
             ws,
             isHost: true
           });
-          ws.send(JSON.stringify({ type: 'ROOM_CREATED', code, room: rooms.get(code) }));
-          broadcast(rooms.get(code), { type: 'PLAYERS_UPDATED', players: rooms.get(code).players.map(p => ({id:p.id,name:p.name,isHost:p.isHost})) });
+          
+          ws.send(JSON.stringify({ type: 'ROOM_CREATED', code, room }));
+          broadcast(room)({ type: 'PLAYERS_UPDATED', players: room.players.map(p => ({id:p.id,name:p.name,isHost:p.isHost})) });
           break;
         }
+
         case 'JOIN_ROOM': {
-          const room = rooms.get(msg.code);
-          if (!room) return ws.send(JSON.stringify({ type: 'ERROR', message: 'Room not found' }));
-          if (room.players.length >= room.maxPlayers) return ws.send(JSON.stringify({ type: 'ERROR', message: 'Room full' }));
+          roomCode = msg.code?.toUpperCase();
+          room = rooms.get(roomCode);
+          
+          if (!room) {
+            ws.send(JSON.stringify({ type: 'ERROR', message: 'Room not found — check the code!' }));
+            return;
+          }
+          if (room.players.length >= room.maxPlayers) {
+            ws.send(JSON.stringify({ type: 'ERROR', message: 'Room is full' }));
+            return;
+          }
+          if (room.status !== 'waiting') {
+            ws.send(JSON.stringify({ type: 'ERROR', message: 'Game already in progress' }));
+            return;
+          }
+          
           playerId = msg.playerId;
-          roomCode = msg.code;
           room.players.push({
             id: playerId,
             name: msg.playerName || 'Guest',
             ws,
             isHost: false
           });
+          
           ws.send(JSON.stringify({ type: 'ROOM_JOINED', room, playerId }));
-          broadcast(room, { type: 'PLAYERS_UPDATED', players: room.players.map(p => ({id:p.id,name:p.name,isHost:p.isHost})) });
+          broadcast(room)({ type: 'PLAYERS_UPDATED', players: room.players.map(p => ({id:p.id,name:p.name,isHost:p.isHost})) });
           break;
         }
+
         case 'LIST_ROOMS': {
           const list = Array.from(rooms.values())
             .filter(r => !r.isPrivate && r.status === 'waiting')
@@ -120,15 +157,16 @@ wss.on('connection', (ws) => {
           ws.send(JSON.stringify({ type: 'ROOM_LIST', rooms: list }));
           break;
         }
+
         case 'START_GAME': {
-          const room = rooms.get(msg.roomCode);
           if (!room) return;
           room.status = 'playing';
           room.currentRound = 1;
           room.letter = generateLetter();
           room.answers = {};
           room.votes = {};
-          broadcast(room, {
+          
+          broadcast(room)({
             type: 'ROUND_START',
             round: room.currentRound,
             totalRounds: room.totalRounds,
@@ -136,52 +174,78 @@ wss.on('connection', (ws) => {
             categories: room.categories,
             timeLimit: room.timeLimit
           });
+          // Also send to host who sent this message
+          ws.send(JSON.stringify({
+            type: 'ROUND_START',
+            round: room.currentRound,
+            totalRounds: room.totalRounds,
+            letter: room.letter,
+            categories: room.categories,
+            timeLimit: room.timeLimit
+          }));
           break;
         }
+
         case 'SUBMIT_ANSWER': {
-          const room = rooms.get(msg.roomCode);
           if (!room) return;
           if (!room.answers[playerId]) room.answers[playerId] = {};
-          room.answers[playerId][msg.categoryId] = msg.answer;
+          room.answers[playerId][msg.categoryId] = msg.answer || '';
           break;
         }
+
         case 'PRESSED_STOP': {
-          const room = rooms.get(msg.roomCode);
           if (!room || room.status !== 'playing') return;
           room.status = 'voting';
-          broadcast(room, { type: 'STOP_CALLED', byName: room.players.find(p => p.id === playerId)?.name });
+          const byName = room.players.find(p => p.id === playerId)?.name || 'Someone';
+          broadcast(room)({ type: 'STOP_CALLED', byName });
+          ws.send(JSON.stringify({ type: 'STOP_CALLED', byName }));
+          
           setTimeout(() => {
-            broadcast(room, { type: 'VOTING_START', answers: room.answers, categories: room.categories });
-          }, 500);
+            const ansData = {};
+            for (const pid in room.answers) {
+              ansData[pid] = { ...room.answers[pid] };
+            }
+            broadcast(room)({ type: 'VOTING_START', answers: ansData, categories: room.categories });
+            ws.send(JSON.stringify({ type: 'VOTING_START', answers: ansData, categories: room.categories }));
+          }, 600);
           break;
         }
+
         case 'TIME_UP': {
-          const room = rooms.get(msg.roomCode);
           if (!room || room.status !== 'playing') return;
           room.status = 'voting';
-          broadcast(room, { type: 'TIME_UP' });
+          broadcast(room)({ type: 'TIME_UP' });
+          ws.send(JSON.stringify({ type: 'TIME_UP' }));
+          
           setTimeout(() => {
-            broadcast(room, { type: 'VOTING_START', answers: room.answers, categories: room.categories });
-          }, 500);
+            const ansData = {};
+            for (const pid in room.answers) {
+              ansData[pid] = { ...room.answers[pid] };
+            }
+            broadcast(room)({ type: 'VOTING_START', answers: ansData, categories: room.categories });
+            ws.send(JSON.stringify({ type: 'VOTING_START', answers: ansData, categories: room.categories }));
+          }, 600);
           break;
         }
+
         case 'SUBMIT_VOTE': {
-          const room = rooms.get(msg.roomCode);
           if (!room) return;
           if (!room.votes[msg.targetPlayer]) room.votes[msg.targetPlayer] = {};
           room.votes[msg.targetPlayer][msg.categoryId] = msg.isValid;
           break;
         }
+
         case 'FINISH_VOTING': {
-          const room = rooms.get(msg.roomCode);
           if (!room) return;
+          
           const seen = new Map();
           for (const pid in room.answers) {
             for (const cat in room.answers[pid]) {
-              const key = `${cat}:${(room.answers[pid][cat] || '').toLowerCase().trim()}`;
-              seen.set(key, (seen.get(key) || 0) + 1);
+              const val = (room.answers[pid][cat] || '').toLowerCase().trim();
+              if (val) seen.set(`${cat}:${val}`, (seen.get(`${cat}:${val}`) || 0) + 1);
             }
           }
+          
           const scores = {};
           for (const pid in room.answers) {
             scores[pid] = {};
@@ -194,27 +258,34 @@ wss.on('connection', (ws) => {
               else scores[pid][cat] = 5;
             }
           }
+          
           if (!room.totals) room.totals = {};
           for (const pid in scores) {
             if (!room.totals[pid]) room.totals[pid] = 0;
             room.totals[pid] += Object.values(scores[pid]).reduce((a, b) => a + b, 0);
           }
+          
           const board = room.players.map(p => ({
             playerId: p.id, name: p.name,
             roundScore: Object.values(scores[p.id] || {}).reduce((a, b) => a + b, 0),
             totalScore: room.totals[p.id]
           })).sort((a, b) => b.totalScore - a.totalScore);
-          broadcast(room, { type: 'SCORES', scoreboard: board });
+          
+          broadcast(room)({ type: 'SCORES', scoreboard: board });
+          ws.send(JSON.stringify({ type: 'SCORES', scoreboard: board }));
+          
           setTimeout(() => {
             if (room.currentRound >= room.totalRounds) {
-              broadcast(room, { type: 'GAME_END', finalRanking: board });
+              broadcast(room)({ type: 'GAME_END', finalRanking: board });
+              ws.send(JSON.stringify({ type: 'GAME_END', finalRanking: board }));
             } else {
               room.currentRound++;
               room.letter = generateLetter();
               room.answers = {};
               room.votes = {};
               room.status = 'playing';
-              broadcast(room, {
+              
+              broadcast(room)({
                 type: 'ROUND_START',
                 round: room.currentRound,
                 totalRounds: room.totalRounds,
@@ -222,25 +293,39 @@ wss.on('connection', (ws) => {
                 categories: room.categories,
                 timeLimit: room.timeLimit
               });
+              ws.send(JSON.stringify({
+                type: 'ROUND_START',
+                round: room.currentRound,
+                totalRounds: room.totalRounds,
+                letter: room.letter,
+                categories: room.categories,
+                timeLimit: room.timeLimit
+              }));
             }
           }, 5000);
           break;
         }
       }
-    } catch (e) { console.error('Message error:', e); }
+    } catch (e) {
+      console.error('Message error:', e);
+    }
   });
 
   ws.on('close', () => {
     if (!roomCode || !playerId) return;
-    const room = rooms.get(roomCode);
-    if (!room) return;
-    const idx = room.players.findIndex(p => p.id === playerId);
-    if (idx !== -1) room.players.splice(idx, 1);
-    if (room.players.length === 0) rooms.delete(roomCode);
-    else broadcast(room, { type: 'PLAYERS_UPDATED', players: room.players.map(p => ({id:p.id,name:p.name,isHost:p.isHost})) });
+    const r = rooms.get(roomCode);
+    if (!r) return;
+    const idx = r.players.findIndex(p => p.id === playerId);
+    if (idx !== -1) r.players.splice(idx, 1);
+    
+    if (r.players.length === 0) {
+      rooms.delete(roomCode);
+    } else {
+      broadcast(r)({ type: 'PLAYERS_UPDATED', players: r.players.map(p => ({id:p.id,name:p.name,isHost:p.isHost})) });
+    }
   });
 });
 
 server.listen(PORT, () => {
-  console.log(`✅ Categories Stop running on port ${PORT}`);
+  console.log(`✅ Server running on port ${PORT}`);
 });
