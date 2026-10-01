@@ -5,10 +5,9 @@ const path = require('path');
 
 const PORT = process.env.PORT || 8080;
 
-// === PERSISTENT STORE — in-memory now, database later ===
-const sessions = new Map();       // playerId → { name, lastSeen }
-const rooms = new Map();          // roomCode → room object
-const playerToRoom = new Map();   // playerId → roomCode (track who is where)
+const sessions = new Map();
+const rooms = new Map();
+const playerToRoom = new Map();
 
 const ALL_CATEGORIES = [
   { id: 'country', name: 'Country' }, { id: 'city', name: 'City' },
@@ -19,7 +18,6 @@ const ALL_CATEGORIES = [
   { id: 'book', name: 'Book' }, { id: 'river', name: 'River' }
 ];
 
-// === HELPERS ===
 function makeRoomCode() {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
 }
@@ -33,15 +31,13 @@ function generateLetter() {
   return l;
 }
 
-function broadcast(room, excludePlayerId = null) {
-  return (msg) => {
-    const data = JSON.stringify(msg);
-    room.players.forEach(p => {
-      if (p.id !== excludePlayerId && p.ws?.readyState === WebSocket.OPEN) {
-        p.ws.send(data);
-      }
-    });
-  };
+function broadcastToRoom(room, message) {
+  const data = JSON.stringify(message);
+  room.players.forEach(p => {
+    if (p.ws?.readyState === WebSocket.OPEN) {
+      p.ws.send(data);
+    }
+  });
 }
 
 function cleanupPlayerFromRoom(playerId, room) {
@@ -52,22 +48,19 @@ function cleanupPlayerFromRoom(playerId, room) {
   if (room.players.length === 0) {
     rooms.delete(room.id);
   } else {
-    // Transfer host if needed
     if (room.players.every(p => !p.isHost)) {
       room.players[0].isHost = true;
     }
-    broadcast(room)({ type: 'PLAYERS_UPDATED', players: room.players.map(p => ({id:p.id,name:p.name,isHost:p.isHost})) });
+    broadcastToRoom(room, { 
+      type: 'PLAYERS_UPDATED', 
+      players: room.players.map(p => ({id:p.id,name:p.name,isHost:p.isHost})) 
+    });
   }
 }
 
-// === HTTP SERVER — Serve Pages ===
 const server = http.createServer((req, res) => {
-  console.log(`➡️ ${req.method} ${req.url}`);
-
   let filePath = 'public/index.html';
-  if (req.url === '/' || req.url === '/index.html') {
-    filePath = 'public/index.html';
-  } else if (req.url.startsWith('/categories-stop')) {
+  if (req.url.startsWith('/categories-stop')) {
     filePath = 'public/categories-stop.html';
   } else {
     filePath = `public${req.url}`;
@@ -90,19 +83,15 @@ const server = http.createServer((req, res) => {
   });
 });
 
-// === WEBSOCKET — GAME LOGIC ===
 const wss = new WebSocket.Server({ server });
 
 wss.on('connection', (ws) => {
   let playerId = null;
-  let roomCode = null;
-  let room = null;
 
   ws.on('message', (raw) => {
     try {
       const msg = JSON.parse(raw);
       
-      // Track identity from first message
       if (msg.playerId) {
         playerId = msg.playerId;
         sessions.set(playerId, { 
@@ -110,20 +99,15 @@ wss.on('connection', (ws) => {
           lastSeen: Date.now()
         });
       }
-      
       if (!playerId) return;
-
-      // Update last seen
       if (sessions.has(playerId)) {
         sessions.get(playerId).lastSeen = Date.now();
       }
 
       switch (msg.type) {
-        // ─── CREATE ROOM ───
         case 'CREATE_ROOM': {
-          // Prevent duplicate room membership
           if (playerToRoom.has(playerId)) {
-            ws.send(JSON.stringify({ type: 'ERROR', message: 'You are already in a room — refresh to reset' }));
+            ws.send(JSON.stringify({ type: 'ERROR', message: 'Already in a room — refresh to reset' }));
             return;
           }
 
@@ -132,7 +116,7 @@ wss.on('connection', (ws) => {
             ? ALL_CATEGORIES.filter(c => msg.selectedCategories.includes(c.id))
             : ALL_CATEGORIES.slice(0, 6);
           
-          room = {
+          const room = {
             id: code,
             name: msg.roomName || `${sessions.get(playerId).name}'s Game`,
             isPrivate: msg.isPrivate || false,
@@ -149,7 +133,6 @@ wss.on('connection', (ws) => {
             totals: {}
           };
           
-          roomCode = code;
           rooms.set(code, room);
           playerToRoom.set(playerId, code);
           
@@ -160,20 +143,14 @@ wss.on('connection', (ws) => {
             isHost: true
           });
           
-          ws.send(JSON.stringify({ 
-            type: 'ROOM_CREATED', 
-            code, 
-            room,
-            yourId: playerId
-          }));
-          broadcast(room, playerId)({ 
+          ws.send(JSON.stringify({ type: 'ROOM_CREATED', code, room, yourId: playerId }));
+          broadcastToRoom(room, { 
             type: 'PLAYERS_UPDATED', 
             players: room.players.map(p => ({id:p.id,name:p.name,isHost:p.isHost})) 
           });
           break;
         }
 
-        // ─── JOIN ROOM ───
         case 'JOIN_ROOM': {
           const targetCode = msg.code?.toUpperCase();
           const targetRoom = rooms.get(targetCode);
@@ -191,75 +168,47 @@ wss.on('connection', (ws) => {
             return;
           }
 
-          // 🔑 KEY FIX: Leave old room if rejoining same/different room
-          const existingRoomCode = playerToRoom.get(playerId);
-          if (existingRoomCode && existingRoomCode !== targetCode) {
-            cleanupPlayerFromRoom(playerId, rooms.get(existingRoomCode));
+          const existingCode = playerToRoom.get(playerId);
+          if (existingCode && existingCode !== targetCode) {
+            cleanupPlayerFromRoom(playerId, rooms.get(existingCode));
           }
           
-          // Prevent duplicates in THIS room
           const existingPlayer = targetRoom.players.find(p => p.id === playerId);
           if (existingPlayer) {
-            // Reconnection — update their WebSocket only
             existingPlayer.ws = ws;
-            room = targetRoom;
-            roomCode = targetCode;
             playerToRoom.set(playerId, targetCode);
-            
-            ws.send(JSON.stringify({ 
-              type: 'ROOM_JOINED', 
-              room,
-              yourId: playerId,
-              isReconnect: true
-            }));
-            return; // ← NO new player added! ✅
+            ws.send(JSON.stringify({ type: 'ROOM_JOINED', room: targetRoom, yourId: playerId, isReconnect: true }));
+            return;
           }
           
-          // Fresh join
-          room = targetRoom;
-          roomCode = targetCode;
           playerToRoom.set(playerId, targetCode);
-          
-          room.players.push({
+          targetRoom.players.push({
             id: playerId,
             name: sessions.get(playerId).name,
             ws,
             isHost: false
           });
           
-          ws.send(JSON.stringify({ 
-            type: 'ROOM_JOINED', 
-            room,
-            yourId: playerId
-          }));
-          broadcast(room, playerId)({ 
+          ws.send(JSON.stringify({ type: 'ROOM_JOINED', room: targetRoom, yourId: playerId }));
+          broadcastToRoom(targetRoom, { 
             type: 'PLAYERS_UPDATED', 
-            players: room.players.map(p => ({id:p.id,name:p.name,isHost:p.isHost})) 
+            players: targetRoom.players.map(p => ({id:p.id,name:p.name,isHost:p.isHost})) 
           });
           break;
         }
 
-        // ─── LIST ROOMS ───
         case 'LIST_ROOMS': {
           const list = Array.from(rooms.values())
             .filter(r => !r.isPrivate && r.status === 'waiting')
-            .map(r => ({ 
-              code: r.id, 
-              name: r.name, 
-              players: r.players.length, 
-              maxPlayers: r.maxPlayers 
-            }));
+            .map(r => ({ code: r.id, name: r.name, players: r.players.length, maxPlayers: r.maxPlayers }));
           ws.send(JSON.stringify({ type: 'ROOM_LIST', rooms: list }));
           break;
         }
 
-        // ─── START GAME ───
         case 'START_GAME': {
-          room = rooms.get(msg.roomCode || roomCode);
+          const room = rooms.get(msg.roomCode || playerToRoom.get(playerId));
           if (!room) return;
-          
-          const isHost = room.players.some(p => p.id === playerId && p.isHost);
-          if (!isHost) {
+          if (!room.players.some(p => p.id === playerId && p.isHost)) {
             ws.send(JSON.stringify({ type: 'ERROR', message: 'Only host can start' }));
             return;
           }
@@ -270,93 +219,83 @@ wss.on('connection', (ws) => {
           room.answers = {};
           room.votes = {};
           
-          const startMsg = {
+          broadcastToRoom(room, {
             type: 'ROUND_START',
             round: room.currentRound,
             totalRounds: room.totalRounds,
             letter: room.letter,
             categories: room.categories,
             timeLimit: room.timeLimit
-          };
-          
-          room.players.forEach(p => {
-            if (p.ws.readyState === WebSocket.OPEN) {
-              p.ws.send(JSON.stringify(startMsg));
-            }
           });
           break;
         }
 
-        // ─── SUBMIT ANSWER ───
         case 'SUBMIT_ANSWER': {
-          room = rooms.get(msg.roomCode || roomCode);
+          const room = rooms.get(msg.roomCode || playerToRoom.get(playerId));
           if (!room) return;
           if (!room.answers[playerId]) room.answers[playerId] = {};
           room.answers[playerId][msg.categoryId] = msg.answer || '';
           break;
         }
 
-        // ─── PRESSED STOP ───
+        // ✅ FIXED: STOP → Voting flow
         case 'PRESSED_STOP': {
-          room = rooms.get(msg.roomCode || roomCode);
+          const room = rooms.get(msg.roomCode || playerToRoom.get(playerId));
           if (!room || room.status !== 'playing') return;
+          
           room.status = 'voting';
           const byName = room.players.find(p => p.id === playerId)?.name || 'Someone';
           
-          const stopMsg = { type: 'STOP_CALLED', byName };
-          room.players.forEach(p => {
-            if (p.ws.readyState === WebSocket.OPEN) p.ws.send(JSON.stringify(stopMsg));
-          });
+          // Step 1: Announce STOP to everyone
+          broadcastToRoom(room, { type: 'STOP_CALLED', byName });
           
+          // Step 2: Immediately send voting data — NO delay gap
           setTimeout(() => {
-            const ansData = {};
+            const answers = {};
             for (const pid in room.answers) {
-              ansData[pid] = { ...room.answers[pid] };
+              answers[pid] = { ...room.answers[pid] };
             }
-            const voteMsg = { type: 'VOTING_START', answers: ansData, categories: room.categories };
-            room.players.forEach(p => {
-              if (p.ws.readyState === WebSocket.OPEN) p.ws.send(JSON.stringify(voteMsg));
+            // ✅ Critical: Send to ALL including the person who pressed STOP
+            broadcastToRoom(room, {
+              type: 'VOTING_START',
+              answers: answers,
+              categories: room.categories
             });
-          }, 600);
+          }, 500);
           break;
         }
 
-        // ─── TIME UP ───
         case 'TIME_UP': {
-          room = rooms.get(msg.roomCode || roomCode);
+          const room = rooms.get(msg.roomCode || playerToRoom.get(playerId));
           if (!room || room.status !== 'playing') return;
-          room.status = 'voting';
           
-          const timeMsg = { type: 'TIME_UP' };
-          room.players.forEach(p => {
-            if (p.ws.readyState === WebSocket.OPEN) p.ws.send(JSON.stringify(timeMsg));
-          });
+          room.status = 'voting';
+          broadcastToRoom(room, { type: 'TIME_UP' });
           
           setTimeout(() => {
-            const ansData = {};
+            const answers = {};
             for (const pid in room.answers) {
-              ansData[pid] = { ...room.answers[pid] };
+              answers[pid] = { ...room.answers[pid] };
             }
-            const voteMsg = { type: 'VOTING_START', answers: ansData, categories: room.categories };
-            room.players.forEach(p => {
-              if (p.ws.readyState === WebSocket.OPEN) p.ws.send(JSON.stringify(voteMsg));
+            broadcastToRoom(room, {
+              type: 'VOTING_START',
+              answers: answers,
+              categories: room.categories
             });
-          }, 600);
+          }, 500);
           break;
         }
 
-        // ─── SUBMIT VOTE ───
         case 'SUBMIT_VOTE': {
-          room = rooms.get(msg.roomCode || roomCode);
+          const room = rooms.get(msg.roomCode || playerToRoom.get(playerId));
           if (!room) return;
           if (!room.votes[msg.targetPlayer]) room.votes[msg.targetPlayer] = {};
           room.votes[msg.targetPlayer][msg.categoryId] = msg.isValid;
           break;
         }
 
-        // ─── FINISH VOTING ───
         case 'FINISH_VOTING': {
-          room = rooms.get(msg.roomCode || roomCode);
+          const room = rooms.get(msg.roomCode || playerToRoom.get(playerId));
           if (!room) return;
           
           const seen = new Map();
@@ -392,17 +331,11 @@ wss.on('connection', (ws) => {
             totalScore: room.totals[p.id]
           })).sort((a, b) => b.totalScore - a.totalScore);
           
-          const scoreMsg = { type: 'SCORES', scoreboard: board };
-          room.players.forEach(p => {
-            if (p.ws.readyState === WebSocket.OPEN) p.ws.send(JSON.stringify(scoreMsg));
-          });
+          broadcastToRoom(room, { type: 'SCORES', scoreboard: board });
           
           setTimeout(() => {
             if (room.currentRound >= room.totalRounds) {
-              const endMsg = { type: 'GAME_END', finalRanking: board };
-              room.players.forEach(p => {
-                if (p.ws.readyState === WebSocket.OPEN) p.ws.send(JSON.stringify(endMsg));
-              });
+              broadcastToRoom(room, { type: 'GAME_END', finalRanking: board });
             } else {
               room.currentRound++;
               room.letter = generateLetter();
@@ -410,16 +343,13 @@ wss.on('connection', (ws) => {
               room.votes = {};
               room.status = 'playing';
               
-              const nextMsg = {
+              broadcastToRoom(room, {
                 type: 'ROUND_START',
                 round: room.currentRound,
                 totalRounds: room.totalRounds,
                 letter: room.letter,
                 categories: room.categories,
                 timeLimit: room.timeLimit
-              };
-              room.players.forEach(p => {
-                if (p.ws.readyState === WebSocket.OPEN) p.ws.send(JSON.stringify(nextMsg));
               });
             }
           }, 5000);
@@ -431,30 +361,22 @@ wss.on('connection', (ws) => {
     }
   });
 
-  // ─── DISCONNECTION HANDLING ───
   ws.on('close', () => {
     if (!playerId) return;
+    const code = playerToRoom.get(playerId);
+    if (!code) return;
+    const room = rooms.get(code);
+    if (!room) return;
     
-    const currentRoomCode = playerToRoom.get(playerId);
-    if (!currentRoomCode) return;
-    
-    const currentRoom = rooms.get(currentRoomCode);
-    if (!currentRoom) return;
-    
-    // Only remove if they didn't just reconnect elsewhere
-    // Brief grace period so quick refresh = reconnection, not removal
     setTimeout(() => {
-      // If still not connected after grace period → remove
-      if (playerToRoom.has(playerId)) {
-        const stillHere = currentRoom.players.find(p => p.id === playerId && p.ws.readyState === WebSocket.OPEN);
-        if (!stillHere) {
-          cleanupPlayerFromRoom(playerId, currentRoom);
-        }
+      const stillConnected = room.players.find(p => p.id === playerId && p.ws?.readyState === WebSocket.OPEN);
+      if (!stillConnected) {
+        cleanupPlayerFromRoom(playerId, room);
       }
-    }, 1000); // 1 second grace for reconnection
+    }, 1000);
   });
 });
 
 server.listen(PORT, () => {
-  console.log(`✅ Game server running on port ${PORT}`);
+  console.log(`✅ Server running on port ${PORT}`);
 });
