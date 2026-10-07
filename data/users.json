@@ -1,4 +1,23 @@
 {
-  "users": {},
+  "users": {
+    "raheel888": {
+      "userId": "usr_admin_001",
+      "email": "admin@example.com",
+      "displayName": "Admin",
+      "passwordHash": "$2a$10$E9zRjTtqzWqHnqKb9zG9oPq8Y7x6W5v4U3t2S1r0Qp9O8N7M6L5",
+      "createdAt": 1728339900000,
+      "gamesPlayed": 0,
+      "totalScore": 0
+    },
+    "raheel666": {
+      "userId": "usr_player1_002",
+      "email": "player1@example.com",
+      "displayName": "Player One",
+      "passwordHash": "$2a$10$W7x6V5u4T3s2R1q0P9o8N7m6L5k4J3i2H1g0F9e8D7c6B5A4z3Y",
+      "createdAt": 1728339900000,
+      "gamesPlayed": 0,
+      "totalScore": 0
+    }
+  },
   "sessions": {}
 }
