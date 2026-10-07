@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🎮 Multi-Game Platform</title>
+  <link rel="stylesheet" href="main.css">
+</head>
+<body>
+
+  <nav class="navbar">
+    <div class="nav-brand">🎮 Game Hub</div>
+    <div class="nav-links">
+      <span id="user-display" class="user-info"></span>
+      <button id="logout-btn" class="btn small secondary" style="display:none;">Logout</button>
+    </div>
+  </nav>
+
+  <div id="auth-container" class="auth-card">
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="login">Login</button>
+      <button class="tab-btn" data-tab="register">Register</button>
+    </div>
+
+    <form id="login-form" class="tab-content active">
+      <h2>Welcome Back</h2>
+      <input type="text" id="login-username" placeholder="Username" required>
+      <input type="password" id="login-password" placeholder="Password" required>
+      <button type="submit" class="btn primary">Login</button>
+      <p id="login-error" class="error-msg"></p>
+    </form>
+
+    <form id="register-form" class="tab-content">
+      <h2>Create Account</h2>
+      <input type="text" id="reg-username" placeholder="Username (min 3 chars)" required>
+      <input type="text" id="reg-displayname" placeholder="Display Name">
+      <input type="email" id="reg-email" placeholder="Email (optional)">
+      <input type="password" id="reg-password" placeholder="Password (min 6 chars)" required>
+      <button type="submit" class="btn primary">Register</button>
+      <p id="register-error" class="error-msg"></p>
+    </form>
+  </div>
+
+  <main id="game-hub" style="display:none;">
+    <h1>Choose a Game</h1>
+    <div class="game-grid">
+      <a href="categories-stop/" class="game-card">
+        <div class="game-icon">📝</div>
+        <h3>Categories Stop</h3>
+        <p>Race to fill categories with words starting with the same letter</p>
+        <span class="player-count">2–14 players</span>
+      </a>
+      <a href="tictactoe/" class="game-card">
+        <div class="game-icon">⭕</div>
+        <h3>Tic Tac Toe</h3>
+        <p>Classic game — up to 4 players on bigger boards</p>
+        <span class="player-count">2–4 players</span>
+      </a>
+      <div class="game-card disabled">
+        <div class="game-icon">➕</div>
+        <h3>More Soon</h3>
+        <p>New games being added...</p>
+        <span class="player-count">—</span>
+      </div>
+    </div>
+
+    <div class="profile-card">
+      <h3>Your Stats</h3>
+      <div class="stats-row">
+        <div>
+          <div class="stat-value" id="stat-games">0</div>
+          <div class="stat-label">Games Played</div>
+        </div>
+        <div>
+          <div class="stat-value" id="stat-score">0</div>
+          <div class="stat-label">Total Score</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="main.js"></script>
+</body>
+</html>

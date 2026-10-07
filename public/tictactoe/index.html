@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tic Tac Toe — Up to 4 Players</title>
+  <link rel="stylesheet" href="../main.css">
+  <link rel="stylesheet" href="game.css">
+</head>
+<body>
+
+  <nav class="navbar">
+    <a href="/" class="nav-brand">← Back to Hub</a>
+    <span id="connection-status" class="user-info">⏳ Connecting...</span>
+  </nav>
+
+  <div id="msg-container"></div>
+
+  <div id="screen-lobby" class="screen active">
+    <h1>⭕ Tic Tac Toe</h1>
+    
+    <div class="card">
+      <h3>Find a Game</h3>
+      <button class="btn primary" onclick="refreshRoomList()">🔄 Refresh</button>
+      <div id="room-list" style="margin-top:1rem;"></div>
+    </div>
+
+    <div class="card">
+      <h3>Join by Code</h3>
+      <input type="text" id="join-code" placeholder="Enter room code" maxlength="6">
+      <button class="btn primary" onclick="joinRoom()">Join Room</button>
+    </div>
+
+    <div class="card">
+      <h3>Create New Room</h3>
+      <label>Room Name</label>
+      <input type="text" id="new-room-name" placeholder="My Tic Tac Toe">
+      <label>Number of Players</label>
+      <select id="new-max-players">
+        <option value="2">2 Players (3×3 board)</option>
+        <option value="3">3 Players (6×6 board)</option>
+        <option value="4" selected>4 Players (8×8 board)</option>
+      </select>
+      <button class="btn primary" onclick="createRoom()" style="margin-top:1rem;">➕ Create Room</button>
+    </div>
+  </div>
+
+  <div id="screen-room" class="screen">
+    <h1>Waiting Room</h1>
+    <div class="code-display" id="show-code"></div>
+    
+    <div class="card">
+      <h3>Players</h3>
+      <div id="player-list"></div>
+    </div>
+
+    <button id="start-btn" class="btn accent" style="display:none;width:100%;" onclick="startGame()">
+      ▶️ Start Game
+    </button>
+    
+    <div style="margin-top:1rem;">
+      <button class="btn secondary" onclick="leaveRoom()">Leave Room</button>
+    </div>
+  </div>
+
+  <div id="screen-playing" class="screen">
+    <h1>Game in Progress</h1>
+    <p id="turn-indicator" class="announce">Your turn!</p>
+    
+    <div class="score-board">
+      <div id="player-scores"></div>
+    </div>
+
+    <div id="game-board" class="board-container"></div>
+    
+    <div style="margin-top:2rem;">
+      <button class="btn secondary" onclick="leaveRoom()">Leave to Lobby</button>
+    </div>
+  </div>
+
+  <div id="screen-final" class="screen">
+    <h1 id="result-title">🏆 Game Over!</h1>
+    <div class="card">
+      <table class="score-table" id="final-score-table">
+        <thead><tr><th>Rank</th><th>Player</th><th>Wins</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div style="display:flex;gap:1rem;justify-content:center;margin-top:1.5rem;">
+      <button id="play-again-btn" class="btn primary" style="display:none;" onclick="playAgain()">🔄 Play Again</button>
+      <button class="btn secondary" onclick="backToLobby()">🏠 Back to Lobby</button>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
