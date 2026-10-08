@@ -3,17 +3,22 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
+const { v4: uuidv4 } = require('uuid');
 
-
-const { PORT, DATA_DIR, USERS_FILE } = require('./lib/constants');
+// ─── Load Libs ───
+const { PORT, DATA_DIR, USERS_FILE, SESSIONS_FILE } = require('./lib/constants');
 const { initDataDir, loadData, saveData } = require('./lib/dataStore');
-const { createSessionToken, validateSessionToken } = require('./lib/auth');
-const { dispatchMessage, cleanupDisconnect } = require('./lib/gameRouter');
+const { authenticate } = require('./lib/auth');
+const { broadcastToRoom, cleanupPlayerFromRoom } = require('./lib/roomHelpers');
+const { registerGame, getGameHandler } = require('./lib/gameRouter'); // ← THIS WAS MISSING!
 
-// Register games
+// ─── Load & Register Games ───
+const categoriesStop = require('./games/categories-stop/server');
+const tictactoe = require('./games/tictactoe/server');
+
 registerGame('categories', categoriesStop);
 registerGame('tictactoe', tictactoe);
-
 // ─── INIT ───
 initDataDir();
 
