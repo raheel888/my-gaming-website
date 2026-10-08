@@ -9,6 +9,7 @@ const { v4: uuidv4 } = require('uuid');
 // ─── Load Libs ───
 const { PORT, DATA_DIR, USERS_FILE, SESSIONS_FILE } = require('./lib/constants');
 const { initDataDir, loadData, saveData } = require('./lib/dataStore');
+const { createSessionToken, validateSessionToken } = require('./lib/auth');
 const { authenticate } = require('./lib/auth');
 const { broadcastToRoom, cleanupPlayerFromRoom } = require('./lib/roomHelpers');
 //const { registerGame, getGameHandler } = require('./lib/gameRouter'); // ← THIS WAS MISSING!
