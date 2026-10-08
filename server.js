@@ -14,14 +14,15 @@ const { broadcastToRoom, cleanupPlayerFromRoom } = require('./lib/roomHelpers');
 //const { registerGame, getGameHandler } = require('./lib/gameRouter'); // ← THIS WAS MISSING!
 const { registerGame, dispatchMessage, cleanupDisconnect } = require('./lib/gameRouter');
 
+// ─── INIT ───
+initDataDir();
 // ─── Load & Register Games ───
 const categoriesStop = require('./games/categories-stop/server');
 const tictactoe = require('./games/tictactoe/server');
 
 registerGame('categories', categoriesStop);
 registerGame('tictactoe', tictactoe);
-// ─── INIT ───
-initDataDir();
+
 
 // ─── HTTP SERVER ───
 const server = http.createServer((req, res) => {
