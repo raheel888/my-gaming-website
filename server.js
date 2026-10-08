@@ -11,7 +11,8 @@ const { PORT, DATA_DIR, USERS_FILE, SESSIONS_FILE } = require('./lib/constants')
 const { initDataDir, loadData, saveData } = require('./lib/dataStore');
 const { authenticate } = require('./lib/auth');
 const { broadcastToRoom, cleanupPlayerFromRoom } = require('./lib/roomHelpers');
-const { registerGame, getGameHandler } = require('./lib/gameRouter'); // ← THIS WAS MISSING!
+//const { registerGame, getGameHandler } = require('./lib/gameRouter'); // ← THIS WAS MISSING!
+const { registerGame, dispatchMessage, cleanupDisconnect } = require('./lib/gameRouter');
 
 // ─── Load & Register Games ───
 const categoriesStop = require('./games/categories-stop/server');
