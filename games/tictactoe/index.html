@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tic Tac Toe — Up to 4 Players</title>
+  <link rel="stylesheet" href="../main.css">
+  <link rel="stylesheet" href="game.css">
+</head>
+<body>
+  <nav class="top-nav">
+    <a href="/" class="nav-link">← Back to Lobby</a>
+    <span id="connection-status" class="status">🔄 Connecting...</span>
+  </nav>
+
+  <main>
+    <!-- Lobby Screen -->
+    <section id="screen-lobby" class="screen active">
+      <h1>⭕ Tic Tac Toe</h1>
+      <p class="subtitle">Classic game — up to 4 players!</p>
+      
+      <div class="action-row">
+        <button id="create-room-btn" class="btn primary">➕ Create Room</button>
+        <div class="join-form">
+          <input type="text" id="room-code-input" placeholder="Enter room code" maxlength="6">
+          <button id="join-room-btn" class="btn">Join Game</button>
+        </div>
+      </div>
+
+      <div id="message-area" class="messages"></div>
+    </section>
+
+    <!-- Waiting Room Screen -->
+    <section id="screen-room" class="screen">
+      <h2>Room: <span id="show-code"></span></h2>
+      
+      <div class="room-section">
+        <h3>Players</h3>
+        <div id="players-list" class="player-list"></div>
+      </div>
+
+      <div class="button-row">
+        <button id="start-game-btn" class="btn primary host-only">▶️ Start Game</button>
+        <button id="leave-room-btn" class="btn secondary">Leave Room</button>
+      </div>
+    </section>
+
+    <!-- Game Board Screen -->
+    <section id="screen-playing" class="screen">
+      <h2>Game in Progress</h2>
+      <p id="turn-indicator" class="announce">Your turn!</p>
+      
+      <div class="score-board">
+        <div id="player-scores"></div>
+      </div>
+
+      <div id="game-board" class="board-container"></div>
+      
+      <div style="margin-top: 2rem;">
+        <button id="leave-game-btn" class="btn secondary">Leave to Lobby</button>
+      </div>
+    </section>
+
+    <!-- Game Over Screen -->
+    <section id="screen-final" class="screen">
+      <h1 id="result-title">🏆 Game Over!</h1>
+      <div class="card">
+        <table class="score-table">
+          <thead>
+            <tr><th>Rank</th><th>Player</th><th>Wins</th></tr>
+          </thead>
+          <tbody id="final-scores-body"></tbody>
+        </table>
+      </div>
+      <div style="display: flex; gap: 1rem; justify-content: center; margin-top: 1.5rem;">
+        <button id="play-again-btn" class="btn primary host-only">🔄 Play Again</button>
+        <a href="/" class="btn secondary">🏠 Back to Lobby</a>
+      </div>
+    </section>
+  </main>
+
+  <script src="game.js"></script>
+</body>
+</html>
