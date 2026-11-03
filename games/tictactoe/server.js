@@ -1,113 +1,99 @@
-const { rooms, playerToRoom, makeRoomCode, broadcastToRoom } = require('../../lib/roomHelpers');
+const { rooms, playerToRoom, cleanupPlayerFromRoom } = require('../../lib/roomHelpers');
 
-const TTT_CONFIG = {
-  2: { n: 3, k: 3 },
-  3: { n: 6, k: 4 },
-  4: { n: 8, k: 4 }
-};
+function handleMessage(msg, ctx) {
+  const { ws, userId, sendToAll, sendToOne } = ctx;
+  const { type } = msg;
 
-function checkWin(board, idx, player, n, k) {
-  const row = Math.floor(idx / n), col = idx % n;
-  const dirs = [[0,1],[1,0],[1,1],[1,-1]];
-  for (const [dr, dc] of dirs) {
-    let cells = [idx], r = row + dr, c = col + dc;
-    while (r >= 0 && r < n && c >= 0 && c < n && board[r*n + c] === player) {
-      cells.push(r*n + c); r += dr; c += dc;
+  switch (type) {
+    case 'CREATE_ROOM': {
+      const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+      const room = {
+        code,
+        gameType: 'tictactoe',
+        hostId: userId,
+        players: [{ id: userId, name: msg.playerName, symbol: 'X', score: 0, isHost: true }],
+        board: Array(9).fill(null),
+        currentTurn: userId,
+        status: 'waiting',
+        winner: null
+      };
+      rooms.set(code, room);
+      playerToRoom.set(userId, code);
+      sendToOne(ws, { type: 'ROOM_CREATED', code, room });
+      break;
     }
-    r = row - dr; c = col - dc;
-    while (r >= 0 && r < n && c >= 0 && c < n && board[r*n + c] === player) {
-      cells.push(r*n + c); r -= dr; c -= dc;
+
+    case 'JOIN_ROOM': {
+      const room = rooms.get(msg.code?.toUpperCase());
+      if (!room) {
+        sendToOne(ws, { type: 'ERROR', message: 'Room not found' });
+        return;
+      }
+      if (room.status !== 'waiting') {
+        sendToOne(ws, { type: 'ERROR', message: 'Game already in progress' });
+        return;
+      }
+      if (room.players.length >= 4) {
+        sendToOne(ws, { type: 'ERROR', message: 'Room is full' });
+        return;
+      }
+      const symbols = ['O', '●', '■'];
+      const symbol = symbols[room.players.length - 1] || '?';
+      room.players.push({ id: userId, name: msg.playerName, symbol, score: 0, isHost: false });
+      playerToRoom.set(userId, msg.code.toUpperCase());
+      sendToAll(room, { type: 'ROOM_JOINED', code: room.code, room });
+      break;
     }
-    if (cells.length >= k) return cells;
+
+    case 'START_GAME': {
+      const room = rooms.get(playerToRoom.get(userId));
+      if (!room || room.hostId !== userId) return;
+      room.status = 'playing';
+      room.board = Array(9).fill(null);
+      room.currentTurn = room.players[0].id;
+      room.winner = null;
+      sendToAll(room, { type: 'GAME_STARTED', room });
+      break;
+    }
+
+    case 'MAKE_MOVE': {
+      const room = rooms.get(playerToRoom.get(userId));
+      if (!room || room.status !== 'playing') return;
+      if (room.currentTurn !== userId) return;
+      if (room.board[msg.index] !== null) return;
+      
+      const player = room.players.find(p => p.id === userId);
+      room.board[msg.index] = player.symbol;
+      
+      const winningLine = checkWin(room.board);
+      if (winningLine) {
+        room.status = 'finished';
+        room.winner = userId;
+        player.score++;
+        sendToAll(room, { type: 'GAME_OVER', winnerId: userId, room });
+      } else if (!room.board.includes(null)) {
+        room.status = 'finished';
+        sendToAll(room, { type: 'GAME_DRAW', room });
+      } else {
+        const nextIndex = (room.players.findIndex(p => p.id === userId) + 1) % room.players.length;
+        room.currentTurn = room.players[nextIndex].id;
+        sendToAll(room, { type: 'BOARD_UPDATED', room });
+      }
+      break;
+    }
+  }
+}
+
+function checkWin(board) {
+  const lines = [
+    [0,1,2], [3,4,5], [6,7,8],
+    [0,3,6], [1,4,7], [2,5,8],
+    [0,4,8], [2,4,6]
+  ];
+  for (const [a,b,c] of lines) {
+    if (board[a] && board[a] === board[b] && board[a] === board[c]) return [a,b,c];
   }
   return null;
 }
 
-module.exports = {
-  gameType: 'tictactoe',
-
-  handleMessage(msg, ctx) {
-    switch (msg.type) {
-      case 'CREATE_ROOM': return this.createRoom(msg, ctx);
-      case 'JOIN_ROOM': return this.joinRoom(msg, ctx);
-      case 'LIST_ROOMS': return this.listRooms(msg, ctx);
-      case 'START_GAME': return this.startGame(msg, ctx);
-      case 'MAKE_MOVE': return this.makeMove(msg, ctx);
-    }
-  },
-
-  createRoom(msg, { userId, displayName, ws }) {
-    if (playerToRoom.has(userId)) {
-      ws.send(JSON.stringify({ type: 'ERROR', message: 'Already in a room' }));
-      return;
-    }
-    const code = makeRoomCode();
-    const room = {
-      id: code, gameType: 'tictactoe',
-      name: msg.roomName || `${displayName}'s Tic Tac Toe`,
-      maxPlayers: msg.maxPlayers || 4, players: [], status: 'waiting',
-      board: [], turn: 0, gameOver: false, winningCells: null, scores: Array(4).fill(0)
-    };
-    rooms.set(code, room);
-    playerToRoom.set(userId, code);
-    room.players.push({ userId, displayName, ws, isHost: true });
-    ws.send(JSON.stringify({ type: 'ROOM_CREATED', code, room, yourId: userId, gameType: 'tictactoe' }));
-    broadcastToRoom(room, { type: 'PLAYERS_UPDATED', players: room.players.map(p => ({ userId: p.userId, displayName: p.displayName, isHost: p.isHost })) });
-  },
-
-  joinRoom(msg, { userId, displayName, ws }) {
-    const code = msg.code?.toUpperCase();
-    const room = rooms.get(code);
-    if (!room) return ws.send(JSON.stringify({ type: 'ERROR', message: 'Room not found' }));
-    if (room.players.some(p => p.userId === userId)) {
-      playerToRoom.set(userId, code);
-      return ws.send(JSON.stringify({ type: 'ROOM_JOINED', room, yourId: userId, isReconnect: true, gameType: 'tictactoe' }));
-    }
-    if (room.players.length >= room.maxPlayers) return ws.send(JSON.stringify({ type: 'ERROR', message: 'Room full' }));
-    playerToRoom.set(userId, code);
-    room.players.push({ userId, displayName, ws, isHost: false });
-    ws.send(JSON.stringify({ type: 'ROOM_JOINED', room, yourId: userId, gameType: 'tictactoe' }));
-    broadcastToRoom(room, { type: 'PLAYERS_UPDATED', players: room.players.map(p => ({ userId: p.userId, displayName: p.displayName, isHost: p.isHost })) });
-  },
-
-  listRooms(msg, { ws }) {
-    const list = Array.from(rooms.values())
-      .filter(r => r.status === 'waiting' && r.gameType === 'tictactoe')
-      .map(r => ({ code: r.id, name: r.name, players: r.players.length, maxPlayers: r.maxPlayers, gameType: 'tictactoe' }));
-    ws.send(JSON.stringify({ type: 'ROOM_LIST', rooms: list }));
-  },
-
-  startGame(msg, { userId }) {
-    const room = rooms.get(playerToRoom.get(userId));
-    if (!room || !room.players.some(p => p.userId === userId && p.isHost)) return;
-    const cfg = TTT_CONFIG[room.maxPlayers];
-    room.status = 'playing';
-    room.board = Array(cfg.n * cfg.n).fill(null);
-    room.turn = 0;
-    room.gameOver = false;
-    room.winningCells = null;
-    room.players.forEach((p, i) => p.ws?.readyState === 1 && p.ws.send(JSON.stringify({ type: 'GAME_START', yourIndex: i, board: room.board, n: cfg.n, k: cfg.k })));
-    broadcastToRoom(room, { type: 'STATE_SYNC', board: room.board, turn: room.turn, gameOver: false });
-  },
-
-  makeMove(msg, { userId }) {
-    const room = rooms.get(playerToRoom.get(userId));
-    if (!room || room.status !== 'playing' || room.gameOver) return;
-    const idx = room.players.findIndex(p => p.userId === userId);
-    if (idx !== room.turn) return;
-    const cfg = TTT_CONFIG[room.maxPlayers];
-    if (room.board[msg.index] !== null) return;
-    room.board[msg.index] = idx;
-    const winner = checkWin(room.board, msg.index, idx, cfg.n, cfg.k);
-    if (winner) {
-      room.gameOver = true;
-      room.winningCells = winner;
-      room.scores[idx]++;
-    } else if (!room.board.includes(null)) {
-      room.gameOver = true;
-    } else {
-      room.turn = (room.turn + 1) % room.players.length;
-    }
-    broadcastToRoom(room, { type: 'MOVE_MADE', board: room.board, turn: room.turn, gameOver: room.gameOver, winningCells: room.winningCells, scores: room.scores });
-  }
-};
+module.exports = { handleMessage };
