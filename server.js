@@ -141,25 +141,41 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // ─── STATIC FILES ───
-  let filePath = path.join(__dirname, 'public', req.url === '/' ? 'index.html' : req.url);
-  const ext = path.extname(filePath);
-  const types = {
-    '.html': 'text/html; charset=utf-8',
-    '.css': 'text/css; charset=utf-8',
-    '.js': 'application/javascript; charset=utf-8',
-    '.json': 'application/json'
-  };
+// ─── STATIC FILES ───
+req.url = req.url.replace(/\/$/, '/index.html'); // Auto-show index in folders
 
-  fs.readFile(filePath, (err, data) => {
-    if (err) {
-      res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
-      return res.end('<h1>404 Not Found</h1><a href="/">Back Home</a>');
-    }
-    res.writeHead(200, { 'Content-Type': types[ext] || 'application/octet-stream' });
-    res.end(data);
-  });
+let filePath;
+if (req.url === '/') {
+  filePath = path.join(__dirname, 'public', 'index.html');
+} else {
+  filePath = path.join(__dirname, 'public', req.url);
+}
+
+const ext = path.extname(filePath);
+const types = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.json': 'application/json'
+};
+
+console.log(`📄 Requested: ${req.url} → serving: ${filePath}`); // Debug log
+
+fs.readFile(filePath, (err, data) => {
+  if (err) {
+    console.log(`❌ NOT FOUND: ${filePath}`);
+    res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+    return res.end(`
+      <h1>404 — Page Not Found</h1>
+      <p>URL: ${req.url}</p>
+      <p>Tried: ${filePath}</p>
+      <a href="/">← Back to Home</a>
+    `);
+  }
+  res.writeHead(200, { 'Content-Type': types[ext] || 'application/octet-stream' });
+  res.end(data);
 });
+
 
 // ─── WEBSOCKET ───
 const wss = new WebSocket.Server({ server });
@@ -187,3 +203,4 @@ wss.on('connection', (ws, req) => {
 server.listen(PORT, () => {
   console.log(`🚀 Platform running on port ${PORT}`);
 });
+
