@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Categories Stop</title>
+  <link rel="stylesheet" href="../main.css">
+  <link rel="stylesheet" href="game.css">
+</head>
+<body>
+  <nav class="top-nav">
+    <a href="/" class="nav-link">← Back to Lobby</a>
+    <span id="connection-status" class="status">🔄 Connecting...</span>
+  </nav>
+
+  <main>
+    <!-- Lobby Screen -->
+    <section id="screen-lobby" class="screen active">
+      <h1>🎯 Categories Stop</h1>
+      <p class="subtitle">Race against time — name items in each category!</p>
+      
+      <div class="action-row">
+        <button id="create-room-btn" class="btn primary">➕ Create Room</button>
+        <div class="join-form">
+          <input type="text" id="room-code-input" placeholder="Enter room code" maxlength="6">
+          <button id="join-room-btn" class="btn">Join Game</button>
+        </div>
+      </div>
+
+      <div id="message-area" class="messages"></div>
+    </section>
+
+    <!-- Room Screen -->
+    <section id="screen-room" class="screen">
+      <h2>Room: <span id="show-code"></span></h2>
+      
+      <div class="room-section">
+        <h3>Players</h3>
+        <div id="players-list" class="player-list"></div>
+      </div>
+
+      <div class="room-section">
+        <h3>Select Categories</h3>
+        <div id="categories-checklist" class="checklist"></div>
+      </div>
+
+      <div class="room-section">
+        <h3>Number of Rounds</h3>
+        <select id="rounds-count">
+          <option value="1">1 Round</option>
+          <option value="2">2 Rounds</option>
+          <option value="3" selected>3 Rounds</option>
+          <option value="5">5 Rounds</option>
+        </select>
+      </div>
+
+      <div class="button-row">
+        <button id="start-game-btn" class="btn primary host-only">▶️ Start Game</button>
+        <button id="leave-room-btn" class="btn secondary">Leave Room</button>
+      </div>
+    </section>
+
+    <!-- Game Screen -->
+    <section id="screen-game" class="screen">
+      <div class="game-header">
+        <h3>Round <span id="round-number">1</span> of <span id="total-rounds">3</span></h3>
+        <div class="timer">⏱️ <span id="time-left">60</span>s</div>
+      </div>
+
+      <div class="category-display">
+        <h2 id="current-category">Category Name</h2>
+      </div>
+
+      <div class="input-area">
+        <input type="text" id="answer-input" placeholder="Type your answer here..." autocomplete="off">
+        <button id="submit-answer-btn" class="btn primary">Submit</button>
+      </div>
+
+      <div class="answers-list">
+        <h4>Your Answers:</h4>
+        <ul id="submitted-answers"></ul>
+      </div>
+
+      <div class="button-row">
+        <button id="stop-game-btn" class="btn warning">⏹️ Stop (Only Me)</button>
+      </div>
+    </section>
+
+    <!-- Verification Screen -->
+    <section id="screen-verify" class="screen">
+      <h3>Verify Answers</h3>
+      <p id="verifying-for">Checking answers from Player...</p>
+      
+      <div id="verify-list" class="verify-items"></div>
+      
+      <div class="button-row">
+        <button id="finish-verification-btn" class="btn primary">✅ Finish & See Scores</button>
+        <button id="stop-verify-btn" class="btn warning">⏹️ Stop Game</button>
+      </div>
+    </section>
+
+    <!-- Scores Screen -->
+    <section id="screen-results" class="screen">
+      <h2>🏆 Round Complete!</h2>
+      <div id="scores-display" class="scores-table"></div>
+      <div class="button-row">
+        <button id="next-round-btn" class="btn primary host-only">Next Round →</button>
+        <button id="back-to-lobby-btn" class="btn">Back to Lobby</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="game.js"></script>
+</body>
+</html>
