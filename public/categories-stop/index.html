@@ -8,152 +8,90 @@
   <link rel="stylesheet" href="game.css">
 </head>
 <body>
-
-  <nav class="navbar">
-    <a href="/" class="nav-brand">← Back to Hub</a>
-    <span id="connection-status" class="user-info">⏳ Connecting...</span>
+  <nav class="top-nav">
+    <a href="/" class="nav-link">← Back to Lobby</a>
+    <span id="connection-status" class="status">🔄 Connecting...</span>
   </nav>
 
-  <div id="msg-container"></div>
-
-  <div id="screen-lobby" class="screen active">
-    <h1>📝 Categories Stop</h1>
-    
-    <div class="card">
-      <h3>Find a Game</h3>
-      <button class="btn primary" onclick="refreshRoomList()">🔄 Refresh</button>
-      <div id="room-list" style="margin-top:1rem;"></div>
-    </div>
-
-    <div class="card">
-      <h3>Join by Code</h3>
-      <input type="text" id="join-code" placeholder="Enter room code" maxlength="6">
-      <button class="btn primary" onclick="joinRoom()">Join Room</button>
-    </div>
-
-    <div class="card">
-      <h3>Create New Room</h3>
-      
-      <label>Room Name</label>
-      <input type="text" id="new-room-name" placeholder="My Game">
-
-      <div class="form-row">
-        <div>
-          <label>Rounds to Play</label>
-          <select id="new-total-rounds">
-            <option value="3">3 Rounds</option>
-            <option value="5" selected>5 Rounds</option>
-            <option value="8">8 Rounds</option>
-            <option value="10">10 Rounds</option>
-          </select>
-        </div>
-        <div>
-          <label>Time Limit (sec)</label>
-          <select id="new-time-limit">
-            <option value="30">30s</option>
-            <option value="60" selected>60s</option>
-            <option value="90">90s</option>
-            <option value="120">120s</option>
-          </select>
+  <main>
+    <section id="screen-lobby" class="screen active">
+      <h1>🎯 Categories Stop</h1>
+      <p class="subtitle">Race against time — name items in each category!</p>
+      <div class="action-row">
+        <button id="create-room-btn" class="btn primary">➕ Create Room</button>
+        <div class="join-form">
+          <input type="text" id="room-code-input" placeholder="Enter room code" maxlength="6">
+          <button id="join-room-btn" class="btn">Join Game</button>
         </div>
       </div>
+      <div id="message-area" class="messages"></div>
+    </section>
 
-      <label>Max Players</label>
-      <select id="new-max-players">
-        <option value="2">2 Players</option>
-        <option value="4">4 Players</option>
-        <option value="6">6 Players</option>
-        <option value="8" selected>8 Players</option>
-        <option value="10">10 Players</option>
-        <option value="14">14 Players</option>
-      </select>
+    <section id="screen-room" class="screen">
+      <h2>Room: <span id="show-code"></span></h2>
+      <div class="room-section">
+        <h3>Players</h3>
+        <div id="players-list" class="player-list"></div>
+      </div>
+      <div class="room-section">
+        <h3>Select Categories</h3>
+        <div id="categories-checklist" class="checklist"></div>
+      </div>
+      <div class="room-section">
+        <h3>Number of Rounds</h3>
+        <select id="rounds-count">
+          <option value="1">1 Round</option>
+          <option value="2">2 Rounds</option>
+          <option value="3" selected>3 Rounds</option>
+          <option value="5">5 Rounds</option>
+        </select>
+      </div>
+      <div class="button-row">
+        <button id="start-game-btn" class="btn primary host-only">▶️ Start Game</button>
+        <button id="leave-room-btn" class="btn secondary">Leave Room</button>
+      </div>
+    </section>
 
-      <h4>Select Categories</h4>
-      <p class="hint">Choose at least 3 — default 6 if none selected</p>
-      
-      <table class="category-table">
-        <tbody id="category-checks"></tbody>
-      </table>
+    <section id="screen-game" class="screen">
+      <div class="game-header">
+        <h3>Round <span id="round-number">1</span> of <span id="total-rounds">3</span></h3>
+        <div class="timer">⏱️ <span id="time-left">60</span>s</div>
+      </div>
+      <div class="category-display">
+        <h2 id="current-category">Category Name</h2>
+      </div>
+      <div class="input-area">
+        <input type="text" id="answer-input" placeholder="Type your answer here..." autocomplete="off">
+        <button id="submit-answer-btn" class="btn primary">Submit</button>
+      </div>
+      <div class="answers-list">
+        <h4>Your Answers:</h4>
+        <ul id="submitted-answers"></ul>
+      </div>
+      <div class="button-row">
+        <button id="stop-game-btn" class="btn warning">⏹️ Stop (Only Me)</button>
+      </div>
+    </section>
 
-      <button class="btn primary" onclick="createRoom()" style="margin-top:1rem;">➕ Create Room</button>
-    </div>
-  </div>
+    <section id="screen-verify" class="screen">
+      <h3>Verify Answers</h3>
+      <p id="verifying-for">Checking answers from Player...</p>
+      <div id="verify-list" class="verify-items"></div>
+      <div class="button-row">
+        <button id="finish-verification-btn" class="btn primary">✅ Finish & See Scores</button>
+        <button id="stop-verify-btn" class="btn warning">⏹️ Stop Game</button>
+      </div>
+    </section>
 
-  <div id="screen-room" class="screen">
-    <h1>Waiting Room</h1>
-    <div class="code-display" id="show-code"></div>
-    
-    <div class="card">
-      <h3>Players</h3>
-      <div id="player-list"></div>
-    </div>
-
-    <button id="start-btn" class="btn accent" style="display:none;width:100%;" onclick="startGame()">
-      ▶️ Start Game
-    </button>
-    
-    <div style="margin-top:1rem;">
-      <button class="btn secondary" onclick="leaveRoom()">Leave Room</button>
-    </div>
-  </div>
-
-  <div id="screen-playing" class="screen">
-    <h1>Round <span id="round-num">1</span> / <span id="total-rounds">5</span></h1>
-    
-    <div class="letter-display">
-      Letter: <span id="current-letter">A</span>
-    </div>
-    
-    <div class="timer-bar">
-      <div id="timer-fill"></div>
-    </div>
-    <p id="timer-text" class="timer-text">60s remaining</p>
-
-    <form id="answers-form" class="answers-form"></form>
-
-    <button id="stop-btn" class="btn danger" onclick="pressStop()">🛑 STOP</button>
-    <p id="stop-note" class="hint"></p>
-  </div>
-
-  <div id="screen-round-scores" class="screen">
-    <h1>✅ Round Complete!</h1>
-    <h2>Round Scores</h2>
-    <div class="card">
-      <table class="score-table" id="round-score-table">
-        <thead><tr><th>Rank</th><th>Player</th><th>Points</th></tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-    <h2>Total Standings</h2>
-    <div class="card">
-      <table class="score-table" id="total-score-table">
-        <thead><tr><th>Rank</th><th>Player</th><th>Total</th></tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-    <button id="next-round-btn" class="btn primary" style="display:none;" onclick="nextRound()">Next Round →</button>
-    <button id="end-game-btn" class="btn accent" style="display:none;" onclick="showFinalScores()">See Final Results</button>
-  </div>
-
-  <div id="screen-voting" class="screen">
-    <h1>Voting Phase</h1>
-    <p id="stop-announce" class="announce"></p>
-    <p class="hint">Mark answers — you cannot vote on your own answers</p>
-    <div id="voting-container"></div>
-    <button id="finish-voting-btn" class="btn primary" onclick="finishVoting()">✅ Finish Voting</button>
-  </div>
-
-  <div id="screen-final" class="screen">
-    <h1>🏆 Game Over!</h1>
-    <div class="card">
-      <table class="score-table" id="final-score-table">
-        <thead><tr><th>Rank</th><th>Player</th><th>Total Score</th></tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-    <button class="btn primary" onclick="backToLobby()">🏠 Back to Lobby</button>
-  </div>
-
+    <section id="screen-results" class="screen">
+      <h2>🏆 Round Complete!</h2>
+      <div id="scores-display" class="scores-table"></div>
+      <div class="button-row">
+        <button id="next-round-btn" class="btn primary host-only">Next Round →</button>
+        <button id="back-to-lobby-btn" class="btn">Back to Lobby</button>
+      </div>
+    </section>
+  </main>
   <script src="game.js"></script>
 </body>
 </html>
