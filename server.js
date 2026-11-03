@@ -5,6 +5,8 @@ const path = require('path');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
+const PORT = process.env.PORT || 8080;
+
 
 // ─── Load Libs ───
 const { PORT, DATA_DIR, USERS_FILE, SESSIONS_FILE } = require('./lib/constants');
