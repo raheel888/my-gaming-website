@@ -1,10 +1,17 @@
-module.exports = {
-  id: 'categories',
-  name: 'Categories Stop',
-  description: 'Race to fill categories before time runs out',
-  minPlayers: 2,
-  maxPlayers: 14,
-  defaultRounds: 5,
-  defaultTimeLimit: 60,
-  defaultCategories: 6
+// Game configuration
+export const CATEGORIES = [
+  { id: 'animals', name: '🐾 Animals' },
+  { id: 'countries', name: '🌍 Countries' },
+  { id: 'food', name: '🍔 Food & Drinks' },
+  { id: 'movies', name: '🎬 Movies' },
+  { id: 'sports', name: '⚽ Sports' },
+  { id: 'colors', name: '🎨 Colors' },
+  { id: 'fruits', name: '🍎 Fruits' },
+  { id: 'tools', name: '🔧 Tools' }
+];
+
+export const GAME_CONFIG = {
+  defaultRoundTime: 60,
+  minRounds: 1,
+  maxRounds: 5
 };
