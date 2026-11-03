@@ -1,4 +1,3 @@
-const { v4: uuidv4 } = require('uuid');
 const { rooms, playerToRoom, cleanupPlayerFromRoom } = require('../../lib/roomHelpers');
 const { CATEGORIES } = require('./config');
 
@@ -45,7 +44,7 @@ function handleMessage(msg, ctx) {
     }
 
     case 'SELECT_CATEGORIES': {
-      const room = rooms.get(msg.code);
+      const room = rooms.get(playerToRoom.get(userId));
       if (!room || room.hostId !== userId) return;
       room.categories = CATEGORIES.filter(c => msg.selectedIds?.includes(c.id));
       sendToAll(room, { type: 'CATEGORIES_UPDATED', categories: room.categories });
@@ -53,7 +52,7 @@ function handleMessage(msg, ctx) {
     }
 
     case 'START_GAME': {
-      const room = rooms.get(msg.code);
+      const room = rooms.get(playerToRoom.get(userId));
       if (!room || room.hostId !== userId) return;
       room.status = 'playing';
       room.currentRound = 1;
@@ -80,10 +79,8 @@ function handleMessage(msg, ctx) {
       const roomCode = playerToRoom.get(userId);
       const room = rooms.get(roomCode);
       if (!room) return;
-      // Only host stops for everyone; others stop only themselves
       if (room.hostId === userId) {
         sendToAll(room, { type: 'GAME_STOPPED_BY_HOST' });
-        cleanupPlayerFromRoom(userId);
       } else {
         room.lockedPlayers.add(userId);
         sendToOne(ws, { type: 'STOPPED_FOR_YOU' });
@@ -94,7 +91,6 @@ function handleMessage(msg, ctx) {
     case 'FINISH_VERIFICATION': {
       const room = rooms.get(playerToRoom.get(userId));
       if (!room) return;
-      // Calculate scores and advance
       sendToAll(room, { type: 'ROUND_RESULTS', results: room.answers });
       break;
     }
